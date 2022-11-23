@@ -1,7 +1,7 @@
 const _ = require("lodash");
 const moment = require("moment");
 const {
-  isSameDay, isSameHour, isSameWeek, isSameMonth, isSameYear,
+  isSameDay, isSameHour, isSameWeek, isSameMonth, isSameYear, isSameMinute, isSameSecond,
 } = require("date-fns");
 const FormulaParser = require("hot-formula-parser").Parser;
 
@@ -16,28 +16,30 @@ moment.suppressDeprecationWarnings = true;
 const parser = new FormulaParser();
 
 const areDatesTheSame = (first, second, interval) => {
-  let isTimestamp = false;
   let firstDate = first;
   if (`${first}` === `${parseInt(first, 10)}`) {
-    isTimestamp = true;
     firstDate = parseInt(first, 10);
+    firstDate *= 1000;
+  }
+  // regex to detect this format 2022-07-16 11:38:30 - to avoid Date() modifying the date to UTC
+  if (`${firstDate}`.match(/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/)) {
+    firstDate = `${firstDate.replace(" ", "T")}Z`;
   }
 
   switch (interval) {
+    case "second":
+      return isSameSecond(new Date(firstDate), new Date(second));
+    case "minute":
+      return isSameMinute(new Date(firstDate), new Date(second));
     case "hour":
-      if (isTimestamp) firstDate *= 1000;
       return isSameHour(new Date(firstDate), new Date(second));
     case "day":
-      if (isTimestamp) firstDate *= 1000;
       return isSameDay(new Date(firstDate), new Date(second));
     case "week":
-      if (isTimestamp) firstDate *= 1000;
       return isSameWeek(new Date(firstDate), new Date(second));
     case "month":
-      if (isTimestamp) firstDate *= 1000;
       return isSameMonth(new Date(firstDate), new Date(second));
     case "year":
-      if (isTimestamp) firstDate *= 1000;
       return isSameYear(new Date(firstDate), new Date(second));
     default:
       return false;
@@ -80,8 +82,8 @@ class AxisChart {
       let startDate;
       let endDate;
       if (this.chart.startDate && this.chart.endDate) {
-        startDate = moment(this.chart.startDate);
-        endDate = moment(this.chart.endDate);
+        startDate = moment(this.chart.startDate).startOf("day");
+        endDate = moment(this.chart.endDate).endOf("day");
       }
 
       for (let i = 0; i < this.datasets.length; i++) {
@@ -281,11 +283,14 @@ class AxisChart {
           case "count":
             yAxisData = this.count(xAxisData.formatted, yType, yAxisData, yAxis);
             break;
+          case "count_unique":
+            yAxisData = this.countUnique(xAxisData.formatted, yType, yAxisData, yAxis);
+            break;
           case "avg":
             if (yType === "array") {
-              yAxisData = this.count(xAxisData.formatted, yType, yAxisData, "avg", yAxis);
+              yAxisData = this.count(xAxisData.formatted, yType, yAxisData, "avg", yAxis, dataset.options.averageByTotal);
             } else {
-              yAxisData = this.operate(yAxisData, xAxisData.formatted, xType, yType, "avg", yAxis);
+              yAxisData = this.operate(yAxisData, xAxisData.formatted, xType, yType, "avg", yAxis, dataset.options.averageByTotal);
             }
             break;
           case "sum":
@@ -349,7 +354,11 @@ class AxisChart {
         });
 
         // if the include zero values on the chart is selected
-        if (this.chart.includeZeros && gXType === "date") {
+        if (this.chart.includeZeros
+          && gXType === "date"
+          && this.chart.timeInterval !== "minute"
+          && this.chart.timeInterval !== "second"
+        ) {
           const tempXData = this.axisData.x[xLength];
 
           const newX = [];
@@ -363,12 +372,17 @@ class AxisChart {
 
             const currDate = moment(tempXData[i], this.dateFormat);
             const nextDate = moment(tempXData[i + 1], this.dateFormat);
+            const difference = nextDate.diff(currDate, this.chart.timeInterval);
             if (nextDate.diff(currDate, this.chart.timeInterval) > 1) {
-              currDate.add(1, this.chart.timeInterval);
+              let dateModifier = 1;
+              if (difference >= 100) {
+                dateModifier = parseInt(difference / 20, 10);
+              }
+              currDate.add(dateModifier, this.chart.timeInterval);
               while (currDate.isBefore(nextDate)) {
                 newX.push(currDate.format(this.dateFormat));
                 newY.push(0);
-                currDate.add(1, this.chart.timeInterval);
+                currDate.add(dateModifier, this.chart.timeInterval);
               }
             }
           }
@@ -381,10 +395,15 @@ class AxisChart {
         if (this.chart.subType.indexOf("AddTimeseries") > -1) {
           const newY = [];
           this.axisData.y[yLength].map((item, index) => {
+            let formattedItem = item;
+            if (determineType(item) === "number") {
+              formattedItem = parseFloat(item);
+            }
+
             if (index > 0) {
-              newY.push(item + newY[newY.length - 1]);
+              newY.push(formattedItem + newY[newY.length - 1]);
             } else {
-              newY.push(item);
+              newY.push(formattedItem);
             }
 
             return item;
@@ -399,7 +418,12 @@ class AxisChart {
       // if we're dealing with weekly or hourly data, make sure to not add the same data twice
       let unifiedX = [];
       this.axisData.x.forEach((arr, index) => {
-        if ((this.chart.timeInterval === "week" || this.chart.timeInterval === "hour") && index > 0) {
+        if ((this.chart.timeInterval === "week"
+          || this.chart.timeInterval === "hour"
+          || this.chart.timeInterval === "minute"
+          || this.chart.timeInterval === "second")
+          && index > 0
+        ) {
           arr.forEach((item) => {
             if (unifiedX.indexOf(item) === -1) {
               const allItemsFound = arr.filter((x) => x === item);
@@ -411,7 +435,11 @@ class AxisChart {
         }
       });
 
-      if (this.chart.timeInterval === "week" || this.chart.timeInterval === "hour") {
+      if (this.chart.timeInterval === "week"
+        || this.chart.timeInterval === "hour"
+        || this.chart.timeInterval === "minute"
+        || this.chart.timeInterval === "second"
+      ) {
         unifiedX = unifiedX
           .sort((a, b) => moment(a, this.dateFormat).diff(moment(b, this.dateFormat)));
       } else {
@@ -420,7 +448,12 @@ class AxisChart {
       }
 
       // if we're dealing with dates, make sure to add the missing ones at the end
-      if (gXType === "date" && startDate && endDate) {
+      if (gXType === "date"
+        && startDate
+        && endDate
+        && this.chart.timeInterval !== "minute"
+        && this.chart.timeInterval !== "second"
+      ) {
         const lastValue = moment(unifiedX[unifiedX.length - 1], this.dateFormat);
         lastValue.add(1, this.chart.timeInterval);
         while (lastValue.isBefore(endDate)) {
@@ -465,14 +498,10 @@ class AxisChart {
             const expression = expressionString.replace(/val/g, val);
 
             const newVal = parser.parse(expression);
-            let parserResult = newVal.result;
-            if (parserResult % 1 !== 0) {
-              parserResult = parserResult.toFixed(2);
-            }
 
-            let finalVal = `${before}${parserResult}${after}`;
+            let finalVal = `${before}${newVal.result.toLocaleString()}${after}`;
             if (this.chart.mode !== "kpi") {
-              finalVal = parserResult;
+              finalVal = +(newVal.result.toFixed(2)).toLocaleString();
             }
 
             return finalVal;
@@ -571,10 +600,10 @@ class AxisChart {
         let previousValue;
 
         try {
-          const currArr = `${d.data[d.data.length - 1]}`.match(/[\d.]+/g);
-          const prevArr = `${d.data[d.data.length - 2]}`.match(/[\d.]+/g);
-          currentValue = parseFloat(currArr.filter((n) => n !== ".")[0]);
-          previousValue = parseFloat(prevArr.filter((n) => n !== ".")[0]);
+          const currArr = `${d.data[d.data.length - 1]}`.replace(",", "").match(/[\d.]+/g);
+          const prevArr = `${d.data[d.data.length - 2]}`.replace(",", "").match(/[\d.]+/g);
+          currentValue = parseFloat(currArr.filter((n) => n !== "." && n !== ",")[0]);
+          previousValue = parseFloat(prevArr.filter((n) => n !== "." && n !== ",")[0]);
         } catch (e) { /** */ }
 
         if (determineType(currentValue) === "number" && determineType(previousValue) === "number") {
@@ -583,8 +612,8 @@ class AxisChart {
           result *= 100;
 
           configuration.growth.push({
-            value: `${before}${currentValue}${after}`,
-            comparison: (result === 0 && 0) || result.toFixed(2),
+            value: `${before}${currentValue.toLocaleString()}${after}`,
+            comparison: (result === 0 && 0) || +(result.toFixed(2)).toLocaleString(),
             status: (result > 0 && "positive") || (result < 0 && "negative") || "neutral",
             label: d.label,
           });
@@ -606,7 +635,7 @@ class AxisChart {
         }
 
         configuration.growth.push({
-          value: `${before}${currentValue}${after}`,
+          value: `${before}${currentValue.toLocaleString()}${after}`,
           comparison: currentValue * 100,
           status: (currentValue > 0 && "positive") || (currentValue < 0 && "negative") || "neutral",
           label: d.label,
@@ -650,14 +679,63 @@ class AxisChart {
     // format the dates
     for (let i = 0; i < axisData.length; i++) {
       switch (this.chart.timeInterval) {
+        case "second":
+          if (this.dateFormat) {
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.year() !== endDate.year()) {
+            this.dateFormat = "YYYY/MM/DD HH:mm:ss";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.month() !== endDate.month()) {
+            this.dateFormat = "MMM Do HH:mm:ss";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.week() !== endDate.week() && moment().week() !== startDate.week()) {
+            this.dateFormat = "ddd Do HH:mm:ss";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.day() !== endDate.day() && moment().day() !== startDate.day()) {
+            this.dateFormat = "ddd HH:mm:ss";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.day() === endDate.day() && moment().day() === startDate.day()) {
+            this.dateFormat = "HH:mm:ss";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else {
+            this.dateFormat = "MMM Do HH:mm:ss";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          }
+          break;
+        case "minute":
+          if (this.dateFormat) {
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.year() !== endDate.year()) {
+            this.dateFormat = "YYYY/MM/DD HH:mm";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.month() !== endDate.month()) {
+            this.dateFormat = "MMM Do HH:mm";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.week() !== endDate.week() && moment().week() !== startDate.week()) {
+            this.dateFormat = "ddd do HH:mm";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.day() !== endDate.day() && moment().day() !== startDate.day()) {
+            this.dateFormat = "ddd HH:mm";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else if (startDate.day() === endDate.day() && moment().day() === startDate.day()) {
+            this.dateFormat = "HH:mm";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else {
+            this.dateFormat = "MMM Do HH:mm";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          }
+          break;
         case "hour":
           if (this.dateFormat) {
             axisData[i] = axisData[i].format(this.dateFormat);
           } else if (startDate.year() !== endDate.year()) {
             this.dateFormat = "YYYY/MM/DD hA";
             axisData[i] = axisData[i].format(this.dateFormat);
-          } else {
+          } else if (startDate.month() !== endDate.month()) {
             this.dateFormat = "MMM Do hA";
+            axisData[i] = axisData[i].format(this.dateFormat);
+          } else {
+            this.dateFormat = "ddd do hA";
             axisData[i] = axisData[i].format(this.dateFormat);
           }
           break;
@@ -739,7 +817,7 @@ class AxisChart {
   }
 
   /* OPERATIONS */
-  operate(data, xData, xType, yType, op, yAxis) {
+  operate(data, xData, xType, yType, op, yAxis, averageByTotal) {
     const yData = {};
     data.map((item, index) => {
       let key = item.x;
@@ -755,6 +833,7 @@ class AxisChart {
     });
 
     const finalData = {};
+    let totalNumberOfItems = 0;
     Object.keys(yData).forEach((key) => {
       let finalItem = yData[key];
 
@@ -776,7 +855,11 @@ class AxisChart {
           }
         });
 
-        if (op === "avg") {
+        if (averageByTotal) {
+          totalNumberOfItems += collection.length;
+        }
+
+        if (op === "avg" && !averageByTotal) {
           finalItem = nestedResult / collection.length;
         } else if (op === "min") {
           if (nestedResult < minValue || (!minValue && minValue !== 0)) {
@@ -797,9 +880,13 @@ class AxisChart {
         finalItem = finalItem[yData[key].length - 1];
         if (op === "sum" && yType === "number") finalItem = _.reduce(yData[key], (sum, n) => sum + n);
         if (op === "avg" && yType === "number") {
-          finalItem = _.reduce(yData[key], (avg, n) => avg + n);
-          finalItem /= yData[key].length;
-          finalItem = parseFloat(finalItem.toFixed(2));
+          if (averageByTotal) {
+            totalNumberOfItems += yData[key].length;
+          } else {
+            finalItem = _.reduce(yData[key], (avg, n) => avg + n);
+            finalItem /= yData[key].length;
+            finalItem = parseFloat(finalItem.toFixed(2));
+          }
         }
         if (op === "min") finalItem = _.min(yData[key]);
         if (op === "max") finalItem = _.max(yData[key]);
@@ -807,6 +894,13 @@ class AxisChart {
 
       finalData[key] = finalItem;
     });
+
+    if (averageByTotal) {
+      Object.keys(finalData).forEach((key) => {
+        finalData[key] /= totalNumberOfItems;
+        finalData[key] = parseFloat(finalData[key].toFixed(2));
+      });
+    }
 
     return finalData;
   }
@@ -850,6 +944,16 @@ class AxisChart {
         else countData[item]++;
       });
     }
+
+    return countData;
+  }
+
+  countUnique(xData, type) {
+    if (type === "array") return {};
+    const countData = {};
+    xData.forEach((item) => {
+      if (!countData[item]) countData[item] = 1;
+    });
 
     return countData;
   }

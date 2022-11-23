@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import PropTypes from "prop-types";
 import { Doughnut } from "react-chartjs-2";
+import { useTheme } from "@nextui-org/react";
 
 import {
   Chart as ChartJS,
@@ -28,19 +29,33 @@ const dataLabelsPlugin = {
   },
   padding: 4,
   formatter: (value, context) => {
+    let formattedValue = value;
+    try {
+      formattedValue = parseFloat(value);
+    } catch (e) {
+      // do nothing
+    }
+
     const hiddens = context.chart._hiddenIndices;
     let total = 0;
     const datapoints = context.dataset.data;
     datapoints.forEach((val, i) => {
+      let formattedVal = val;
+      try {
+        formattedVal = parseFloat(val);
+      } catch (e) {
+        // do nothing
+      }
       if (hiddens[i] !== undefined) {
         if (!hiddens[i]) {
-          total += val;
+          total += formattedVal;
         }
       } else {
-        total += val;
+        total += formattedVal;
       }
     });
-    const percentage = `${((value / total) * 100).toFixed(2)}%`;
+
+    const percentage = `${((formattedValue / total) * 100).toFixed(2)}%`;
     const out = percentage;
     return out;
   },
@@ -71,6 +86,21 @@ function DoughnutChart(props) {
     }
   }, [redraw]);
 
+  const { theme } = useTheme();
+
+  const _getChartOptions = () => {
+    // add any dynamic changes to the chartJS options here
+    if (chart.chartData?.options) {
+      const newOptions = { ...chart.chartData.options };
+      if (newOptions.plugins?.legend?.labels) {
+        newOptions.plugins.legend.labels.color = theme.colors.accents9.value;
+      }
+      return newOptions;
+    }
+
+    return chart.chartData?.options;
+  };
+
   return (
     <div>
       {chart.chartData.data && chart.chartData.data.labels && (
@@ -78,13 +108,13 @@ function DoughnutChart(props) {
           <Doughnut
             data={chart.chartData.data}
             options={{
-              ...chart.chartData.options,
+              ..._getChartOptions(),
               plugins: {
-                ...chart.chartData.options.plugins,
+                ..._getChartOptions().plugins,
                 datalabels: dataLabelsPlugin,
               },
             }}
-            height={height}
+            height={height - 10}
             redraw={redraw}
             plugins={[ChartDataLabels]}
           />

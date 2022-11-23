@@ -1,8 +1,6 @@
 import React, { useEffect } from "react";
 import PropTypes from "prop-types";
 import { Bar } from "react-chartjs-2";
-import { Header, Icon } from "semantic-ui-react";
-import uuid from "uuid/v4";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,11 +12,11 @@ import {
   Legend,
   Filler,
 } from "chart.js";
+import { useTheme } from "@nextui-org/react";
 
-import determineType from "../../../modules/determineType";
 import KpiChartSegment from "./KpiChartSegment";
-import { Colors } from "../../../config/colors";
 import ChartErrorBoundary from "./ChartErrorBoundary";
+import KpiMode from "./KpiMode";
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, BarElement, Title, Tooltip, Legend, Filler
@@ -37,141 +35,71 @@ function BarChart(props) {
     }
   }, [redraw]);
 
-  const _getKpi = (data) => {
-    if (data && Array.isArray(data)) {
-      for (let i = data.length - 1; i >= 0; i--) {
-        if (data[i]
-          && determineType(data[i]) === "string"
-          && determineType(data[i]) === "number"
-          && determineType(data[i]) === "boolean"
-        ) {
-          return data[i];
-        }
-      }
+  const { theme } = useTheme();
 
-      return `${data[data.length - 1]}`;
+  const _getChartOptions = () => {
+    // add any dynamic changes to the chartJS options here
+    if (chart.chartData?.options) {
+      const newOptions = { ...chart.chartData.options };
+      if (newOptions.scales?.y?.grid) {
+        newOptions.scales.y.grid.color = theme.colors.accents5.value;
+      }
+      if (newOptions.scales?.x?.grid) {
+        newOptions.scales.x.grid.color = theme.colors.accents5.value;
+      }
+      if (newOptions.scales?.y?.ticks) {
+        newOptions.scales.y.ticks.color = theme.colors.accents9.value;
+      }
+      if (newOptions.scales?.x?.ticks) {
+        newOptions.scales.x.ticks.color = theme.colors.accents9.value;
+      }
+      if (newOptions.plugins?.legend?.labels) {
+        newOptions.plugins.legend.labels.color = theme.colors.accents9.value;
+      }
+      return newOptions;
     }
 
-    return `${data}`;
-  };
-
-  const _renderGrowth = (c) => {
-    if (!c) return (<span />);
-    const { status, comparison } = c;
-    return (
-      <div style={{
-        fontSize: chart.chartSize === 1 ? "0.9em" : "0.7em",
-        display: "block",
-        marginTop: chart.chartSize === 1 ? 10 : 0,
-      }}>
-        <Icon
-          name={
-            status === "neutral" ? "minus"
-              : `arrow circle ${(status === "positive" && "up") || "down"}`
-          }
-          color={
-            status === "positive" ? "green" : status === "negative" ? "red" : "grey"
-          }
-        />
-        <span style={{ color: Colors[status] }}>
-          {`${comparison}% `}
-        </span>
-        <small style={{ color: Colors.neutral, fontWeight: "normal", display: "inline-block" }}>
-          {` last ${chart.timeInterval}`}
-        </small>
-      </div>
-    );
+    return chart.chartData?.options;
   };
 
   return (
     <>
       {chart.mode === "kpi"
+        && chart.chartData
+        && chart.chartData.data
+        && chart.chartData.data.datasets
         && (
-          <div>
-            {chart.chartData
-              && chart.chartData.data
-              && chart.chartData.data.datasets && (
-                <div style={styles.kpiContainer(chart.chartSize)}>
-                  {chart.chartData.data.datasets.map((dataset, index) => (
-                    <Header
-                      as="h1"
-                      size="massive"
-                      style={styles.kpiItem(
-                        chart.chartSize,
-                        chart.chartData.data.datasets.length,
-                        index
-                      )}
-                      key={uuid()}
-                    >
-                      {dataset.data && _getKpi(dataset.data)}
-                      {chart.Datasets[index] && (
-                        <Header.Subheader style={{ color: "black", marginTop: chart.showGrowth ? -5 : 0 }}>
-                          {chart.showGrowth && chart.chartData.growth && (
-                            _renderGrowth(chart.chartData.growth[index])
-                          )}
-                          <span
-                            style={
-                              chart.Datasets
-                              && styles.datasetLabelColor(chart.Datasets[index].datasetColor)
-                            }
-                          >
-                            {dataset.label}
-                          </span>
-                        </Header.Subheader>
-                      )}
-                    </Header>
-                  ))}
-                </div>
-            )}
-          </div>
+          <KpiMode chart={chart} />
         )}
-      <div className={chart.mode === "kpi" && "chart-kpi"}>
-        {chart.chartData.growth && chart.mode === "kpichart" && (
-          <KpiChartSegment chart={chart} editMode={editMode} />
-        )}
-        {chart.chartData.data && chart.chartData.data.labels && (
-          <div>
-            <ChartErrorBoundary>
-              <Bar
-                data={chart.chartData.data}
-                options={chart.chartData.options}
-                height={
-                  height - (
-                    (chart.mode === "kpichart" && chart.chartSize > 1 && 90)
-                    || (chart.mode === "kpichart" && chart.chartSize === 1 && 80)
-                    || 0
-                  )
-                }
-                redraw={redraw}
-              />
-            </ChartErrorBoundary>
-          </div>
-        )}
-      </div>
+
+      {chart.mode !== "kpi" && chart.chartData && chart.chartData.data && (
+        <div className={chart.mode === "kpi" && "chart-kpi"}>
+          {chart.chartData.growth && chart.mode === "kpichart" && (
+            <KpiChartSegment chart={chart} editMode={editMode} />
+          )}
+          {chart.chartData.data && chart.chartData.data.labels && (
+            <div>
+              <ChartErrorBoundary>
+                <Bar
+                  data={chart.chartData.data}
+                  options={_getChartOptions()}
+                  height={
+                    height - (
+                      (chart.mode === "kpichart" && chart.chartSize > 1 && 80)
+                      || (chart.mode === "kpichart" && chart.chartSize === 1 && 74)
+                      || 10
+                    )
+                  }
+                  redraw={redraw}
+                />
+              </ChartErrorBoundary>
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
-
-const styles = {
-  kpiContainer: (size) => ({
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    display: "flex",
-    flexDirection: size === 1 ? "column" : "row",
-  }),
-  kpiItem: (size, items, index) => ({
-    fontSize: size === 1 ? "2.5em" : "4em",
-    textAlign: "center",
-    margin: 0,
-    marginBottom: size === 1 && index < items - 1 ? (50 - items * 10) : 0,
-    marginRight: index < items - 1 && size > 1 ? (40 * size) - (items * 8) : 0,
-  }),
-  datasetLabelColor: (color) => ({
-    borderBottom: `solid 3px ${color}`,
-  }),
-};
 
 BarChart.defaultProps = {
   redraw: false,

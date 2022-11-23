@@ -21,6 +21,28 @@ const drCacheController = require("./DataRequestCacheController");
 const RealtimeDatabase = require("../connections/RealtimeDatabase");
 const CustomerioConnection = require("../connections/CustomerioConnection");
 
+async function checkAndGetCache(connection_id, dataRequest) {
+  // check if there is a cache available and valid
+  try {
+    const drCache = await drCacheController.findLast(dataRequest.id);
+    const cachedDataRequest = drCache.dataRequest;
+    cachedDataRequest.updatedAt = "";
+    cachedDataRequest.createdAt = "";
+
+    const liveDataRequest = dataRequest.toJSON();
+    liveDataRequest.updatedAt = "";
+    liveDataRequest.createdAt = "";
+
+    if (_.isEqual(cachedDataRequest, liveDataRequest) && drCache.connection_id === connection_id) {
+      return drCache.responseData;
+    }
+  } catch (e) {
+    return false;
+  }
+
+  return false;
+}
+
 function isArrayPresent(responseData) {
   let arrayFound = false;
   Object.keys(responseData).forEach((k1) => {
@@ -67,7 +89,9 @@ class ConnectionController {
   }
 
   findById(id) {
-    return db.Connection.findByPk(id)
+    return db.Connection.findByPk(id, {
+      include: [{ model: db.OAuth, attributes: { exclude: ["refreshToken"] } }],
+    })
       .then((connection) => {
         if (!connection) {
           return new Promise((resolve, reject) => reject(new Error(404)));
@@ -439,23 +463,8 @@ class ConnectionController {
 
   async runMongo(id, dataRequest, getCache) {
     if (getCache) {
-      // check if there is a cache available and valid
-      try {
-        const drCache = await drCacheController.findLast(dataRequest.id);
-        const cachedDataRequest = drCache.dataRequest;
-        cachedDataRequest.updatedAt = "";
-        cachedDataRequest.createdAt = "";
-
-        const liveDataRequest = dataRequest.toJSON();
-        liveDataRequest.updatedAt = "";
-        liveDataRequest.createdAt = "";
-
-        if (_.isEqual(cachedDataRequest, liveDataRequest)) {
-          return drCache.responseData;
-        }
-      } catch (e) {
-        //
-      }
+      const drCache = await checkAndGetCache(id, dataRequest);
+      if (drCache) return drCache;
     }
 
     let mongoConnection;
@@ -487,6 +496,7 @@ class ConnectionController {
         const dataToCache = {
           dataRequest,
           responseData: data,
+          connection_id: id,
         };
         drCacheController.create(dataRequest.id, dataToCache);
 
@@ -503,7 +513,12 @@ class ConnectionController {
       });
   }
 
-  runMysqlOrPostgres(id, dataRequest) {
+  async runMysqlOrPostgres(id, dataRequest, getCache) {
+    if (getCache) {
+      const drCache = await checkAndGetCache(id, dataRequest);
+      if (drCache) return drCache;
+    }
+
     return this.findById(id)
       .then((connection) => {
         return externalDbConnection(connection);
@@ -512,6 +527,15 @@ class ConnectionController {
         return dbConnection.query(dataRequest.query, { type: Sequelize.QueryTypes.SELECT });
       })
       .then((results) => {
+        // cache the data for later use
+        const dataToCache = {
+          dataRequest,
+          responseData: results,
+          connection_id: id,
+        };
+
+        drCacheController.create(dataRequest.id, dataToCache);
+
         return new Promise((resolve) => resolve(results));
       })
       .catch((error) => {
@@ -521,23 +545,8 @@ class ConnectionController {
 
   async runApiRequest(id, chartId, dataRequest, getCache) {
     if (getCache) {
-      // check if there is a cache available and valid
-      try {
-        const drCache = await drCacheController.findLast(dataRequest.id);
-        const cachedDataRequest = drCache.dataRequest;
-        cachedDataRequest.updatedAt = "";
-        cachedDataRequest.createdAt = "";
-
-        const liveDataRequest = dataRequest.toJSON();
-        liveDataRequest.updatedAt = "";
-        liveDataRequest.createdAt = "";
-
-        if (_.isEqual(cachedDataRequest, liveDataRequest)) {
-          return drCache.responseData;
-        }
-      } catch (e) {
-        //
-      }
+      const drCache = await checkAndGetCache(id, dataRequest);
+      if (drCache) return drCache;
     }
 
     const limit = dataRequest.itemsLimit
@@ -654,6 +663,7 @@ class ConnectionController {
           const dataToCache = {
             dataRequest,
             responseData: response,
+            connection_id: id,
           };
           drCacheController.create(dataRequest.id, dataToCache);
 
@@ -675,6 +685,7 @@ class ConnectionController {
             const dataToCache = {
               dataRequest,
               responseData,
+              connection_id: id,
             };
 
             drCacheController.create(dataRequest.id, dataToCache);
@@ -694,23 +705,8 @@ class ConnectionController {
 
   async runFirestore(id, dataRequest, getCache) {
     if (getCache) {
-      // check if there is a cache available and valid
-      try {
-        const drCache = await drCacheController.findLast(dataRequest.id);
-        const cachedDataRequest = drCache.dataRequest;
-        cachedDataRequest.updatedAt = "";
-        cachedDataRequest.createdAt = "";
-
-        const liveDataRequest = dataRequest.toJSON();
-        liveDataRequest.updatedAt = "";
-        liveDataRequest.createdAt = "";
-
-        if (_.isEqual(cachedDataRequest, liveDataRequest)) {
-          return drCache.responseData;
-        }
-      } catch (e) {
-        //
-      }
+      const drCache = await checkAndGetCache(id, dataRequest);
+      if (drCache) return drCache;
     }
 
     return this.findById(id)
@@ -724,6 +720,7 @@ class ConnectionController {
         const dataToCache = {
           dataRequest,
           responseData,
+          connection_id: id,
         };
         drCacheController.create(dataRequest.id, dataToCache);
 
@@ -736,23 +733,8 @@ class ConnectionController {
 
   async runRealtimeDb(id, dataRequest, getCache) {
     if (getCache) {
-      // check if there is a cache available and valid
-      try {
-        const drCache = await drCacheController.findLast(dataRequest.id);
-        const cachedDataRequest = drCache.dataRequest;
-        cachedDataRequest.updatedAt = "";
-        cachedDataRequest.createdAt = "";
-
-        const liveDataRequest = dataRequest.toJSON();
-        liveDataRequest.updatedAt = "";
-        liveDataRequest.createdAt = "";
-
-        if (_.isEqual(cachedDataRequest, liveDataRequest)) {
-          return drCache.responseData;
-        }
-      } catch (e) {
-        //
-      }
+      const drCache = await checkAndGetCache(id, dataRequest);
+      if (drCache) return drCache;
     }
 
     return this.findById(id)
@@ -766,6 +748,7 @@ class ConnectionController {
         const dataToCache = {
           dataRequest,
           responseData,
+          connection_id: id,
         };
         drCacheController.create(dataRequest.id, dataToCache);
 
@@ -776,11 +759,30 @@ class ConnectionController {
       });
   }
 
-  async runGoogleAnalytics(connection, dataRequest) {
+  async runGoogleAnalytics(connection, dataRequest, getCache) {
+    if (getCache) {
+      const drCache = await checkAndGetCache(connection.id, dataRequest);
+      if (drCache) return drCache;
+    }
+
     if (!connection.oauth_id) return Promise.reject({ error: "No oauth token" });
 
     const oauth = await oauthController.findById(connection.oauth_id);
-    return googleConnector.getAnalytics(oauth, dataRequest);
+    return googleConnector.getAnalytics(oauth, dataRequest)
+      .then((responseData) => {
+        // cache the data for later use
+        const dataToCache = {
+          dataRequest,
+          responseData,
+          connection_id: connection.id,
+        };
+        drCacheController.create(dataRequest.id, dataToCache);
+
+        return responseData;
+      })
+      .catch((err) => {
+        return new Promise((resolve, reject) => reject(err));
+      });
   }
 
   async testGoogleAnalytics(connection) {
@@ -792,23 +794,8 @@ class ConnectionController {
 
   async runCustomerio(connection, dataRequest, getCache) {
     if (getCache) {
-      // check if there is a cache available and valid
-      try {
-        const drCache = await drCacheController.findLast(dataRequest.id);
-        const cachedDataRequest = drCache.dataRequest;
-        cachedDataRequest.updatedAt = "";
-        cachedDataRequest.createdAt = "";
-
-        const liveDataRequest = dataRequest.toJSON();
-        liveDataRequest.updatedAt = "";
-        liveDataRequest.createdAt = "";
-
-        if (_.isEqual(cachedDataRequest, liveDataRequest)) {
-          return drCache.responseData;
-        }
-      } catch (e) {
-        //
-      }
+      const drCache = await checkAndGetCache(connection.id, dataRequest);
+      if (drCache) return drCache;
     }
 
     if (dataRequest.route.indexOf("customers") === 0) {
@@ -818,6 +805,7 @@ class ConnectionController {
           const dataToCache = {
             dataRequest,
             responseData,
+            connection_id: connection.id,
           };
           drCacheController.create(dataRequest.id, dataToCache);
 
@@ -833,6 +821,7 @@ class ConnectionController {
           const dataToCache = {
             dataRequest,
             responseData,
+            connection_id: connection.id,
           };
           drCacheController.create(dataRequest.id, dataToCache);
 

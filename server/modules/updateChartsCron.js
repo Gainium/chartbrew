@@ -1,17 +1,48 @@
-const { CronJob } = require("cron");
+const cron = require("node-cron");
 const moment = require("moment");
 const { Op } = require("sequelize");
+const { Worker } = require("worker_threads");
+const path = require("path");
 
 const ChartController = require("../controllers/ChartController");
 
-function updateCharts() {
-  const chartController = new ChartController();
+const chartController = new ChartController();
 
+function assignChartsPerWorker(charts) {
+  const workers = [];
+  const workerCount = process.env.CB_BACKEND_WORKERS || 4;
+  const chartsPerWorker = Math.ceil(charts.length / workerCount);
+
+  for (let i = 0; i < workerCount; i++) {
+    const workerCharts = charts.slice(i * chartsPerWorker, (i + 1) * chartsPerWorker);
+
+    const workerPath = path.join(__dirname, "/workers/updateChart.js");
+    workers.push(new Worker(workerPath, { workerData: { charts: workerCharts } }));
+  }
+
+  /** TO ACTIVATE FOR DEBUGGING */
+  // workers.forEach((worker) => {
+  //   worker.on("message", (message) => {
+  //     console.log("worker message", message);
+  //   });
+  //   worker.on("error", (error) => {
+  //     console.log("worker error", error);
+  //   });
+  //   worker.on("exit", (code) => {
+  //     console.log("worker exit code", code);
+  //   });
+  // });
+
+  return Promise.all(workers);
+}
+
+function updateCharts() {
   const conditions = {
     where: {
       autoUpdate: { [Op.gt]: 0 }
     },
     attributes: ["id", "lastAutoUpdate", "autoUpdate"],
+    raw: true
   };
 
   return chartController.findAll(conditions)
@@ -20,18 +51,13 @@ function updateCharts() {
         return new Promise((resolve) => resolve({ completed: true }));
       }
 
-      let queuedUpdates = 0;
-      charts.forEach((chart) => {
-        if (moment(chart.lastAutoUpdate).add(chart.autoUpdate, "seconds").isBefore(moment())) {
-          queuedUpdates++;
-          chartController.updateChartData(chart.id, null, {})
-            .catch(() => { });
-          chartController.update(chart.id, { lastAutoUpdate: moment() })
-            .catch(() => { });
-        }
-      });
+      const filteredCharts = charts.filter((chart) => moment(chart.lastAutoUpdate).add(chart.autoUpdate, "seconds").isBefore(moment()));
 
-      return { completed: true, queuedUpdates };
+      // throttleUpdateDates(filteredCharts, 0);
+      // throttleUpdates(filteredCharts, 0);
+      assignChartsPerWorker(filteredCharts);
+
+      return { completed: true };
     })
     .catch((error) => {
       return new Promise((resolve, reject) => reject(error));
@@ -43,11 +69,9 @@ module.exports = () => {
   updateCharts();
 
   // now run the cron job
-  const cron = new CronJob("0 */1 * * * *", () => {
+  cron.schedule("*/1 * * * *", () => {
     updateCharts();
   });
 
-  cron.start();
-
-  return cron;
+  return true;
 };

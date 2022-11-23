@@ -3,9 +3,13 @@ import PropTypes from "prop-types";
 import { connect } from "react-redux";
 import { withRouter } from "react-router";
 import {
-  Grid, Button, Icon, Header, Divider, Popup,
-  Form, Input, List, Message, Checkbox, Modal, TransitionablePortal,
-} from "semantic-ui-react";
+  Container, Link as LinkNext, Grid, Spacer, Tooltip, Row, Input, Button,
+  Switch, Text, Loading, Modal, Divider, Badge, useTheme,
+} from "@nextui-org/react";
+import {
+  ChevronLeftCircle,
+  ChevronRight, ChevronRightCircle, CloseSquare, Discovery, Edit, Plus, Swap, TickSquare,
+} from "react-iconly";
 import { ToastContainer, toast, Flip } from "react-toastify";
 import "react-toastify/dist/ReactToastify.min.css";
 import _ from "lodash";
@@ -39,7 +43,6 @@ import {
   completeTutorial as completeTutorialAction,
   resetTutorial as resetTutorialAction,
 } from "../../actions/tutorial";
-import ChartFilters from "../Chart/components/ChartFilters";
 
 /*
   Container used for setting up a new chart
@@ -62,6 +65,10 @@ function AddChart(props) {
   const [resetingTutorial, setResetingTutorial] = useState(false);
   const [conditions, setConditions] = useState([]);
   const [updatingDataset, setUpdatingDataset] = useState(false);
+  const [arrangeMode, setArrangeMode] = useState(false);
+  const [datasetsOrder, setDatasetsOrder] = useState([]);
+  const [arrangementLoading, setArrangementLoading] = useState(false);
+  const [invalidateCache, setInvalidateCache] = useState(false);
 
   const { height } = useWindowSize();
 
@@ -72,7 +79,11 @@ function AddChart(props) {
     runQueryWithFilters,
   } = props;
 
+  const { isDark } = useTheme();
+
   useEffect(() => {
+    clearDatasets();
+
     if (match.params.chartId) {
       charts.map((chart) => {
         if (chart.id === parseInt(match.params.chartId, 10)) {
@@ -84,8 +95,6 @@ function AddChart(props) {
 
       // also fetch the chart's datasets
       getChartDatasets(match.params.projectId, match.params.chartId);
-    } else {
-      clearDatasets();
     }
 
     if (user && (!user.tutorials || Object.keys(user.tutorials).length === 0)) {
@@ -123,6 +132,14 @@ function AddChart(props) {
     if (!found) setSaveRequired(false);
   }, [newChart]);
 
+  useEffect(() => {
+    if (datasets.length > 0) {
+      const dOrder = [];
+      datasets.forEach((d) => dOrder.push(d));
+      setDatasetsOrder(dOrder);
+    }
+  }, [datasets]);
+
   const _onDatasetChanged = (dataset) => {
     setActiveDataset(dataset);
     setTimeout(() => {
@@ -154,7 +171,9 @@ function AddChart(props) {
   };
 
   const _onSaveNewDataset = () => {
+    if (savingDataset || addingDataset) return;
     setSavingDataset(true);
+    let savedDataset;
     saveNewDataset(match.params.projectId, match.params.chartId, {
       chart_id: match.params.chartId,
       legend: `Dataset #${datasets.length + 1}`,
@@ -164,9 +183,12 @@ function AddChart(props) {
       .then((dataset) => {
         setSavingDataset(false);
         setAddingDataset(false);
-        setTimeout(() => {
-          _onDatasetChanged(dataset);
-        }, 100);
+        _onDatasetChanged(dataset);
+        savedDataset = dataset;
+        return getChartDatasets(match.params.projectId, match.params.chartId);
+      })
+      .then(() => {
+        _onDatasetChanged(savedDataset);
       })
       .catch(() => {
         setSavingDataset(false);
@@ -262,7 +284,11 @@ function AddChart(props) {
 
         // run the preview refresh only when it's needed
         if (!data.name) {
-          _onRefreshPreview(shouldSkipParsing);
+          if (data.subType || data.type) {
+            _onRefreshData();
+          } else {
+            _onRefreshPreview(shouldSkipParsing);
+          }
         }
 
         setLoading(false);
@@ -275,7 +301,25 @@ function AddChart(props) {
       });
   };
 
-  const _onRefreshData = (getCache) => {
+  const _onRefreshData = () => {
+    const getCache = !invalidateCache;
+
+    // check if all datasets are configured properly
+    const datasetsNotConfigured = datasets.filter((dataset) => {
+      if (!dataset.xAxis || !dataset.yAxis || !dataset.connection_id) return true;
+
+      return false;
+    });
+
+    if (datasetsNotConfigured.length > 0) {
+      datasetsNotConfigured.forEach((dataset) => {
+        toast.error(`Dataset "${dataset.legend}" is not configured properly. Please check the settings.`, {
+          autoClose: 3000,
+        });
+      });
+      return;
+    }
+
     runQuery(match.params.projectId, match.params.chartId, false, false, getCache)
       .then(() => {
         if (conditions.length > 0) {
@@ -288,6 +332,9 @@ function AddChart(props) {
         setLoading(false);
       })
       .catch(() => {
+        toast.error("We couldn't fetch the data. Please check your dataset settings and try again", {
+          autoClose: 2500,
+        });
         setLoading(false);
       });
   };
@@ -373,10 +420,54 @@ function AddChart(props) {
     runQueryWithFilters(match.params.projectId, newChart.id, [condition]);
   };
 
+  const _onSaveArrangement = () => {
+    const promiseData = [];
+    setArrangementLoading(true);
+
+    datasetsOrder.forEach((d, index) => {
+      promiseData.push(
+        updateDataset(
+          match.params.projectId,
+          match.params.chartId,
+          d.id,
+          { order: index },
+        ),
+      );
+    });
+
+    Promise.all(promiseData)
+      .then(() => {
+        setArrangementLoading(false);
+        setArrangeMode(false);
+        _onRefreshData(true);
+        getChartDatasets(match.params.projectId, match.params.chartId);
+      })
+      .catch(() => {
+        toast.error("Oups! Can't save the arrangement. Please try again.");
+        setArrangeMode(false);
+        setArrangementLoading(false);
+      });
+  };
+
+  const _changeDatasetOrder = (dId, direction) => {
+    const newDatasetsOrder = [...datasetsOrder];
+    const index = _.findIndex(datasetsOrder, { id: dId });
+    if (direction === "up") {
+      if (index === 0) return;
+      newDatasetsOrder[index] = datasetsOrder[index - 1];
+      newDatasetsOrder[index - 1] = datasetsOrder[index];
+    } else {
+      if (index === datasetsOrder.length - 1) return;
+      newDatasetsOrder[index] = datasetsOrder[index + 1];
+      newDatasetsOrder[index + 1] = datasetsOrder[index];
+    }
+
+    setDatasetsOrder(newDatasetsOrder);
+  };
+
   if (titleScreen) {
     return (
       <div style={{ textAlign: "center" }}>
-        <Divider hidden />
         <ChartDescription
           name={chartName}
           onChange={_onNameChange}
@@ -388,6 +479,7 @@ function AddChart(props) {
           templates={templates}
           noConnections={connections.length === 0}
         />
+        <Spacer y={2} />
       </div>
     );
   }
@@ -405,100 +497,76 @@ function AddChart(props) {
         draggable
         pauseOnHover
         transition={Flip}
+        theme={isDark ? "dark" : "light"}
       />
-      <Grid columns={2} divided centered stackable>
-        <Grid.Column width={8}>
-          <div>
-            <div style={{ display: "flex" }}>
-              <div style={{ flex: 0.5 }} className="chart-name-tut">
+      <Grid.Container>
+        <Grid xs={12} sm={6} md={7}>
+          <Container>
+            <Row align="center" wrap="wrap" justify="space-between">
+              <Row style={{ flex: 0.6 }} className="chart-name-tut">
                 {!editingTitle
                   && (
-                    <Header textAlign="left" onClick={() => setEditingTitle(true)}>
-                      <Popup
-                        trigger={(
-                          <a style={styles.editTitle}>
-                            {newChart.name}
-                          </a>
-                        )}
-                        content="Edit the chart name"
-                      />
-                    </Header>
+                    <Tooltip content="Edit the chart name">
+                      <LinkNext onClick={() => setEditingTitle(true)} css={{ ai: "center" }} color="primary">
+                        <Edit />
+                        <Spacer x={0.2} />
+                        <Text b>
+                          {newChart.name}
+                        </Text>
+                      </LinkNext>
+                    </Tooltip>
                   )}
 
-                {editingTitle
-                  && (
-                    <Form style={{ display: "inline-block" }}>
-                      <Form.Group>
-                        <Form.Field>
-                          <Input
-                            placeholder="Enter a title"
-                            value={chartName}
-                            onChange={(e, data) => _onNameChange(data.value)}
-                          />
-                        </Form.Field>
-                        <Form.Field>
-                          <Button
-                            secondary
-                            icon
-                            labelPosition="right"
-                            type="submit"
-                            onClick={_onSubmitNewName}
-                          >
-                            <Icon name="checkmark" />
-                            Save
-                          </Button>
-                        </Form.Field>
-                      </Form.Group>
-                    </Form>
-                  )}
-              </div>
-              <div style={{ flex: 0.5, textAlign: "right" }} className="chart-actions-tut">
-                <Checkbox
-                  label="Draft"
-                  toggle
-                  style={{ marginRight: 20 }}
-                  checked={newChart.draft}
-                  onChange={() => _onChangeChart({ draft: !newChart.draft })}
-                />
+                {editingTitle && (
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    _onSubmitNewName();
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <Input
+                        placeholder="Enter a title"
+                        value={chartName}
+                        onChange={(e) => _onNameChange(e.target.value)}
+                        bordered
+                      />
+                      <Spacer x={0.2} />
+                      <Button
+                        color="secondary"
+                        type="submit"
+                        onClick={_onSubmitNewName}
+                        auto
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </Row>
+              <Row style={{ flex: 0.4 }} className="chart-actions-tut" align="center" justify="flex-end">
+                <div style={{ display: "flex" }}>
+                  <Switch
+                    checked={newChart.draft}
+                    onChange={() => _onChangeChart({ draft: !newChart.draft })}
+                    size="sm"
+                  />
+                  <Spacer x={0.2} />
+                  <Text>Draft</Text>
+                </div>
+                <Spacer x={1} />
                 <Button
-                  primary={saveRequired}
-                  positive={!saveRequired}
-                  icon
-                  labelPosition="right"
+                  color={saveRequired ? "primary" : "success"}
                   onClick={() => _onChangeChart({})}
                   loading={loading}
+                  size="sm"
+                  auto
                 >
-                  <Icon name={saveRequired ? "save" : "checkmark"} />
                   {saveRequired && "Save chart"}
                   {!saveRequired && "Chart saved"}
                 </Button>
-              </div>
-            </div>
-            <Divider />
-            <div>
-              <Popup
-                trigger={(
-                  <Button
-                    primary
-                    icon="filter"
-                    direction="left"
-                    className="tertiary"
-                    style={styles.filterBtn}
-                    content="Exposed filters"
-                  />
-                )}
-                on="click"
-                position="left center"
-              >
-                <ChartFilters
-                  chart={newChart}
-                  onAddFilter={_onAddFilter}
-                  onClearFilter={_onClearFilter}
-                  conditions={conditions}
-                />
-              </Popup>
-            </div>
-            <div className="chart-type-tut">
+              </Row>
+            </Row>
+            <Spacer y={1} />
+            <Row className="chart-type-tut">
               <ChartPreview
                 chart={newChart}
                 onChange={_onChangeChart}
@@ -507,125 +575,202 @@ function AddChart(props) {
                 onAddFilter={_onAddFilter}
                 onClearFilter={_onClearFilter}
                 conditions={conditions}
+                datasets={datasets}
+                invalidateCache={invalidateCache}
+                changeCache={() => setInvalidateCache(!invalidateCache)}
               />
-            </div>
-          </div>
-          <div style={styles.topBuffer}>
-            {match.params.chartId && newChart.type && datasets.length > 0 && (
-              <ChartSettings
-                type={newChart.type}
-                pointRadius={newChart.pointRadius}
-                startDate={newChart.startDate}
-                endDate={newChart.endDate}
-                displayLegend={newChart.displayLegend}
-                includeZeros={newChart.includeZeros}
-                currentEndDate={newChart.currentEndDate}
-                timeInterval={newChart.timeInterval}
-                onChange={_onChangeGlobalSettings}
-                onComplete={(skipParsing = false) => _onRefreshPreview(skipParsing)}
-                maxValue={newChart.maxValue}
-                minValue={newChart.minValue}
-                xLabelTicks={newChart.xLabelTicks}
-                stacked={newChart.stacked}
-              />
-            )}
-          </div>
-        </Grid.Column>
-
-        <Grid.Column width={7} className="add-dataset-tut">
-          <Header size="small" dividing>
-            Datasets
-            <Popup
-              trigger={(
-                <Button
-                  basic
-                  onClick={_onResetTutorial}
-                  icon="student"
-                  loading={resetingTutorial}
-                  floated="right"
-                  style={styles.tutorialBtn}
-                  content="Tutorial"
+            </Row>
+            <Spacer y={1} />
+            <Row>
+              {match.params.chartId && newChart.type && datasets.length > 0 && (
+                <ChartSettings
+                  type={newChart.type}
+                  pointRadius={newChart.pointRadius}
+                  startDate={newChart.startDate}
+                  endDate={newChart.endDate}
+                  displayLegend={newChart.displayLegend}
+                  includeZeros={newChart.includeZeros}
+                  currentEndDate={newChart.currentEndDate}
+                  timeInterval={newChart.timeInterval}
+                  onChange={_onChangeGlobalSettings}
+                  onComplete={(skipParsing = false) => _onRefreshPreview(skipParsing)}
+                  maxValue={newChart.maxValue}
+                  minValue={newChart.minValue}
+                  xLabelTicks={newChart.xLabelTicks}
+                  stacked={newChart.stacked}
                 />
               )}
-              content="Start the chart builder tutorial"
-              position="top right"
-            />
-          </Header>
+            </Row>
+          </Container>
+        </Grid>
 
-          <div>
-            {datasets && datasets.map((dataset) => {
-              return (
+        <Grid xs={12} sm={6} md={5} className="add-dataset-tut" css={{ pr: 10 }}>
+          <Container
+            css={{
+              backgroundColor: "$backgroundContrast",
+              br: "$md",
+              "@xs": {
+                p: 20,
+              },
+              "@sm": {
+                p: 20,
+              },
+              "@md": {
+                p: 20,
+              },
+            }}
+          >
+            <Row justify="space-between">
+              <Text b>
+                Datasets
+              </Text>
+              <Tooltip content="Start the chart builder tutorial" placement="leftStart">
+                <LinkNext css={{ color: "$accents6", ai: "center" }} onClick={_onResetTutorial}>
+                  {!resetingTutorial ? <Discovery /> : <Loading type="spinner" />}
+                  <Spacer x={0.2} />
+                  <Text>Tutorial</Text>
+                </LinkNext>
+              </Tooltip>
+            </Row>
+            <Spacer y={0.5} />
+            <Divider />
+            <Spacer y={0.5} />
+            <Row wrap="wrap">
+              {!arrangeMode && datasets && datasets.map((dataset) => {
+                return (
+                  <>
+                    <Button
+                      style={styles.datasetButtons}
+                      key={dataset.id}
+                      onClick={() => _onDatasetChanged(dataset)}
+                      ghost={dataset.id !== activeDataset.id}
+                      size="sm"
+                      auto
+                    >
+                      {dataset.legend}
+                    </Button>
+                  </>
+                );
+              })}
+              {arrangeMode && datasets && datasetsOrder.map((dataset, index) => {
+                return (
+                  <>
+                    <Badge
+                      style={styles.datasetButtons}
+                      key={dataset.id}
+                      isSquared
+                      variant={"bordered"}
+                      color="primary"
+                      size="sm"
+                    >
+                      {index > 0 && (
+                        <LinkNext onClick={() => _changeDatasetOrder(dataset.id, "up")}>
+                          <ChevronLeftCircle size={16} />
+                        </LinkNext>
+                      )}
+                      <Spacer x={0.2} />
+                      {dataset.legend}
+                      <Spacer x={0.2} />
+                      {index < datasetsOrder.length - 1 && (
+                        <LinkNext onClick={() => _changeDatasetOrder(dataset.id, "down")}>
+                          <ChevronRightCircle size={16} />
+                        </LinkNext>
+                      )}
+                    </Badge>
+                  </>
+                );
+              })}
+            </Row>
+
+            <Row align="center" justify="space-between">
+              {!addingDataset && datasets.length > 0 && (
                 <>
-                  <Button
-                    style={styles.datasetButtons}
-                    key={dataset.id}
-                    primary
-                    onClick={() => _onDatasetChanged(dataset)}
-                    basic={dataset.id !== activeDataset.id}
-                    size="small"
-                  >
-                    {dataset.legend}
-                  </Button>
+                  <div>
+                    <Button
+                      onClick={() => _onSaveNewDataset()}
+                      icon={!savingDataset ? <Plus /> : <Loading type="spinner" />}
+                      auto
+                      color="primary"
+                      light
+                      css={{ p: 0 }}
+                    >
+                      {!savingDataset ? <Text>{"Add a new dataset"}</Text> : <Text>{"Saving dataset"}</Text>}
+                    </Button>
+                  </div>
+                  <div style={{ display: "flex", "flexDirection": "row", justifyContent: "flex-end" }}>
+                    <Tooltip content={!arrangeMode ? "Arrange datasets" : "Save arrangement"} placement="leftStart">
+                      <Button
+                        onClick={() => {
+                          if (!arrangeMode) setArrangeMode(true);
+                          else _onSaveArrangement();
+                        }}
+                        icon={arrangeMode && arrangementLoading
+                          ? <Loading type="spinner" />
+                          : arrangeMode && !arrangementLoading
+                            ? <TickSquare /> : <Swap />}
+                        auto
+                        color={arrangeMode ? "success" : "primary"}
+                        light
+                      />
+                    </Tooltip>
+                    {arrangeMode && (
+                      <>
+                        <Tooltip content="Cancel arrangement" placement="leftStart">
+                          <Button
+                            onClick={() => setArrangeMode(false)}
+                            icon={<CloseSquare />}
+                            light
+                            color="warning"
+                            auto
+                          />
+                        </Tooltip>
+                      </>
+                    )}
+                  </div>
                 </>
-              );
-            })}
-          </div>
+              )}
 
-          <div style={styles.addDataset}>
-            {!addingDataset && datasets.length > 0 && (
-              <List>
-                <List.Item as="a" disabled={savingDataset} onClick={() => _onSaveNewDataset()}>
-                  <Icon name={savingDataset ? "spinner" : "plus"} loading={savingDataset} />
-                  <List.Content>
-                    {!savingDataset && (
-                      <List.Header>Add a new dataset</List.Header>
-                    )}
-                    {savingDataset && (
-                      <List.Header>Adding...</List.Header>
-                    )}
-                  </List.Content>
-                </List.Item>
-              </List>
-            )}
+              {!addingDataset && datasets.length === 0 && (
+                <Button
+                  size="lg"
+                  onClick={() => _onSaveNewDataset()}
+                  disabled={savingDataset}
+                  iconRight={<Plus />}
+                  shadow
+                  auto
+                >
+                  {savingDataset && <Loading type="points" />}
+                  {!savingDataset && "Add the first dataset"}
+                </Button>
+              )}
+            </Row>
 
-            {!addingDataset && datasets.length === 0 && (
-              <Button
-                primary
-                icon
-                labelPosition="right"
-                size="large"
-                onClick={() => _onSaveNewDataset()}
-                loading={savingDataset}
-              >
-                <Icon name="plus" />
-                Add the first dataset
-              </Button>
-            )}
-          </div>
-
-          <Divider />
-          {activeDataset.id && datasets.map((dataset) => {
-            return (
-              <div style={activeDataset.id !== dataset.id ? { display: "none" } : {}} key={dataset.id}>
-                <Dataset
-                  dataset={dataset}
-                  onUpdate={(data, skipParsing = false) => _onUpdateDataset(data, skipParsing)}
-                  onDelete={_onDeleteDataset}
-                  chart={newChart}
-                  onRefresh={_onRefreshData}
-                  onRefreshPreview={_onRefreshPreview}
-                  loading={updatingDataset}
-              />
-              </div>
-            );
-          })}
-          {!activeDataset.id && (
-            <Message
-              content="Select or create a dataset above"
-            />
-          )}
-        </Grid.Column>
-      </Grid>
+            <Spacer y={1} />
+            <Row align="center">
+              {activeDataset.id && datasets.map((dataset) => {
+                return (
+                  <div style={activeDataset.id !== dataset.id ? { display: "none" } : {}} key={dataset.id}>
+                    <Dataset
+                      dataset={dataset}
+                      onUpdate={(data, skipParsing = false) => _onUpdateDataset(data, skipParsing)}
+                      onDelete={_onDeleteDataset}
+                      chart={newChart}
+                      onRefresh={_onRefreshData}
+                      onRefreshPreview={_onRefreshPreview}
+                      loading={updatingDataset}
+                  />
+                  </div>
+                );
+              })}
+              {!activeDataset.id && (
+                <Text css={{ color: "$accents6" }} h3>
+                  {"Select or create a dataset above"}
+                </Text>
+              )}
+            </Row>
+          </Container>
+        </Grid>
+      </Grid.Container>
 
       <Walkthrough
         tourActive={tutorial}
@@ -633,37 +778,39 @@ function AddChart(props) {
         userTutorials={user.tutorials}
       />
 
-      <TransitionablePortal open={startTutorial}>
-        <Modal open={startTutorial} onClose={() => setStartTutorial(false)}>
-          <Modal.Header>Welcome to the chart builder!</Modal.Header>
-          <Modal.Content>
-            <Header>{"This is the place where your charts will take shape."}</Header>
-            <p>
-              {"It is recommended that you read through the next steps to get familiar with the interface. "}
-              {"You can always restart the tutorial from the upper right corner at any later time."}
-            </p>
-            <p>{"But without further ado, let's get started"}</p>
-          </Modal.Content>
-          <Modal.Actions>
-            <Button
-              content="Cancel walkthrough"
-              onClick={_onCancelWalkthrough}
-            />
-            <Button
-              positive
-              icon
-              labelPosition="right"
-              onClick={() => {
-                setStartTutorial(false);
-                _changeTour("addchart");
-              }}
-            >
-              <Icon name="chevron right" />
-              Get started
-            </Button>
-          </Modal.Actions>
-        </Modal>
-      </TransitionablePortal>
+      <Modal open={startTutorial} onClose={() => setStartTutorial(false)}>
+        <Modal.Header>
+          <Text h3>
+            Welcome to the chart builder!
+          </Text>
+        </Modal.Header>
+        <Modal.Body>
+          <Text b>{"This is the place where your charts will take shape."}</Text>
+          <Spacer y={0.5} />
+          <Text>
+            {"It is recommended that you read through the next steps to get familiar with the interface. "}
+            {"You can always restart the tutorial from the upper right corner at any later time."}
+          </Text>
+          <Spacer y={0.5} />
+          <Text>{"But without further ado, let's get started"}</Text>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button onClick={_onCancelWalkthrough} flat color="warning">
+            Cancel walkthrough
+          </Button>
+          <Button
+            color="success"
+            onClick={() => {
+              setStartTutorial(false);
+              _changeTour("addchart");
+            }}
+            iconRight={<ChevronRight />}
+            auto
+          >
+            Get started
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }
@@ -672,7 +819,8 @@ const styles = {
   container: (height) => ({
     flex: 1,
     paddingTop: 20,
-    backgroundColor: "white",
+    paddingBottom: 20,
+    // backgroundColor: "white",
     minHeight: height,
   }),
   mainContent: {
@@ -690,6 +838,7 @@ const styles = {
   },
   datasetButtons: {
     marginBottom: 10,
+    marginRight: 3,
   },
   editTitle: {
     cursor: "pointer",

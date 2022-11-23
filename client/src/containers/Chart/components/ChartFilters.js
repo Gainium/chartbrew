@@ -1,18 +1,19 @@
-import React, { useState } from "react";
+import React, { Fragment, useState } from "react";
 import PropTypes from "prop-types";
-import {
-  Button,
-  Dropdown, Form, Segment,
-} from "semantic-ui-react";
 import { Calendar } from "react-date-range";
 import { enGB } from "date-fns/locale";
 import { format, formatISO } from "date-fns";
+import {
+  Container, Row, Button, Dropdown, Spacer, Text, Input,
+} from "@nextui-org/react";
+import { Calendar as CalendarIcon, CloseSquare, TickSquare } from "react-iconly";
 
 import "react-date-range/dist/styles.css"; // main style file
 import "react-date-range/dist/theme/default.css"; // theme css file
 
 import { secondary } from "../../../config/colors";
 import determineType from "../../../modules/determineType";
+import * as operations from "../../../modules/filterOperations";
 
 function ChartFilters(props) {
   const {
@@ -20,6 +21,7 @@ function ChartFilters(props) {
   } = props;
 
   const [calendarOpen, setCalendarOpen] = useState("");
+  const [optionFilter, setOptionFilter] = useState({});
 
   const _getDropdownOptions = (dataset, condition) => {
     const conditionOpt = dataset.conditions.find((c) => c.field === condition.field);
@@ -60,13 +62,21 @@ function ChartFilters(props) {
     return filterCount;
   };
 
+  const _getFilteredOptions = (filterOptions, cId) => {
+    if (!optionFilter[cId]) return filterOptions;
+
+    return filterOptions
+      .filter((o) => o.text
+        && o.text.toString().toLowerCase()?.includes(optionFilter[cId].toLowerCase()));
+  };
+
   return (
     <div>
-      <Form>
+      <Container css={{ pl: 0, pr: 0 }}>
         {!_checkIfFilters() && (
-          <Form.Field>
+          <Row>
             <p>No filters available</p>
-          </Form.Field>
+          </Row>
         )}
         {chart
           && chart.Datasets.filter((d) => d.conditions && d.conditions.length)
@@ -74,59 +84,148 @@ function ChartFilters(props) {
               return dataset.conditions.filter((c) => c.exposed).map((condition) => {
                 const filterOptions = _getDropdownOptions(dataset, condition);
                 return (
-                  <Form.Field key={condition.id}>
-                    <label>{`${condition.field.replace("root[].", "")} ${condition.operator}`}</label>
-                    {condition.type !== "date" && (
-                    <Dropdown
-                      selection
-                      clearable
-                      search
-                      placeholder={`${condition.field.replace("root[].", "")}`}
-                      options={filterOptions}
-                      onChange={(e, data) => _onOptionSelected(data.value, condition)}
-                      value={_getConditionValue(condition.id) || ""}
-                      scrolling
-                      style={{ minWidth: 250 }}
-                    />
-                    )}
-                    {condition.type === "date" && calendarOpen !== condition.id && (
-                    <>
-                      <Button
-                        basic
-                        icon="calendar"
-                        content={(_getConditionValue(condition.id) && format(new Date(_getConditionValue(condition.id)), "Pp", { locale: enGB })) || "Select a date"}
-                        onClick={() => setCalendarOpen(condition.id)}
-                        size="small"
-                      />
-                      {_getConditionValue(condition.id) && (
-                        <Button
-                          className="tertiary"
-                          icon="x"
-                          onClick={() => _onOptionSelected("", condition)}
-                          size="small"
-                        />
-                      )}
-                    </>
-                    )}
-                    {condition.type === "date" && calendarOpen === condition.id && (
-                    <Segment textAlign="left">
-                      <Calendar
-                        date={(
-                          _getConditionValue(condition.id)
-                          && new Date(_getConditionValue(condition.id))
-                        )
-                          || new Date()}
-                        onChange={(date) => _onOptionSelected(formatISO(date), condition)}
-                        locale={enGB}
-                        color={secondary}
-                      />
-                    </Segment>
-                    )}
-                  </Form.Field>
+                  <Fragment key={condition.id}>
+                    <Row align="center">
+                      <div>
+                        <Row align="center">
+                          <Text b size={14}>
+                            {condition.displayName || condition.field.substring(condition.field.lastIndexOf(".") + 1)}
+                          </Text>
+                          <Spacer x={0.2} />
+                          <Text size={14}>
+                            {operations
+                              .operators?.find((o) => condition.operator === o.value)?.text}
+                          </Text>
+                        </Row>
+                        <Spacer y={0.2} />
+                        <div style={{ display: "flex", alignItems: "center" }}>
+                          {condition.type !== "date" && !condition.hideValues && (
+                            <Dropdown>
+                              <Dropdown.Trigger type="text">
+                                <Input
+                                  type="text"
+                                  value={
+                                    optionFilter[condition.id]
+                                    || _getConditionValue(condition.id)
+                                  }
+                                  placeholder="Enter a value or search"
+                                  onChange={(e) => {
+                                    setOptionFilter({
+                                      ...optionFilter, [condition.id]: e.target.value
+                                    });
+                                  }}
+                                  bordered
+                                  size="sm"
+                                  contentRightStyling={false}
+                                  contentRight={(
+                                    <Button
+                                      auto
+                                      icon={<TickSquare />}
+                                      color="success"
+                                      size="sm"
+                                      css={{ minWidth: "fit-content" }}
+                                      flat
+                                      onClick={() => {
+                                        _onOptionSelected(optionFilter[condition.id], condition);
+                                      }}
+                                    />
+                                  )}
+                                />
+                              </Dropdown.Trigger>
+                              <Dropdown.Menu
+                                selectedKeys={[`${_getConditionValue(condition.id)}`]}
+                                onSelectionChange={(selection) => {
+                                  _onOptionSelected(Object.values(selection)[0], condition);
+                                  setOptionFilter({
+                                    ...optionFilter, [condition.id]: ""
+                                  });
+                                }}
+                                selectionMode="single"
+                              >
+                                {_getFilteredOptions(filterOptions, condition.id).map((opt) => (
+                                  <Dropdown.Item key={opt.value}>
+                                    {opt.text}
+                                  </Dropdown.Item>
+                                ))}
+                              </Dropdown.Menu>
+                            </Dropdown>
+                          )}
+                          {condition.type !== "date" && condition.hideValues && (
+                            <Input
+                              type="text"
+                              value={
+                                optionFilter[condition.id]
+                                || _getConditionValue(condition.id)
+                              }
+                              placeholder="Enter a value here"
+                              onChange={(e) => {
+                                setOptionFilter({
+                                  ...optionFilter, [condition.id]: e.target.value
+                                });
+                              }}
+                              bordered
+                              size="sm"
+                              contentRightStyling={false}
+                              contentRight={(
+                                <Button
+                                  auto
+                                  icon={<TickSquare />}
+                                  color="success"
+                                  size="sm"
+                                  css={{ minWidth: "fit-content" }}
+                                  flat
+                                  onClick={() => {
+                                    _onOptionSelected(optionFilter[condition.id], condition);
+                                  }}
+                                />
+                              )}
+                            />
+                          )}
+                          {condition.type === "date" && calendarOpen !== condition.id && (
+                            <>
+                              <Button
+                                bordered
+                                icon={<CalendarIcon />}
+                                onClick={() => setCalendarOpen(condition.id)}
+                                auto
+                                size="sm"
+                              >
+                                {(_getConditionValue(condition.id) && format(new Date(_getConditionValue(condition.id)), "Pp", { locale: enGB })) || "Select a date"}
+                              </Button>
+                              <Spacer x={0.2} />
+                              {_getConditionValue(condition.id) && (
+                                <Button
+                                  light
+                                  icon={<CloseSquare />}
+                                  onClick={() => _onOptionSelected("", condition)}
+                                  auto
+                                />
+                              )}
+                            </>
+                          )}
+                          {condition.type === "date" && calendarOpen === condition.id && (
+                            <div>
+                              <Calendar
+                                date={(
+                                  _getConditionValue(condition.id)
+                                  && new Date(_getConditionValue(condition.id))
+                                )
+                                  || new Date()}
+                                onChange={(date) => _onOptionSelected(formatISO(date), condition)}
+                                locale={enGB}
+                                color={secondary}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </Row>
+                    <Spacer y={0.5} />
+                  </Fragment>
                 );
               });
             })}
-      </Form>
+      </Container>
     </div>
   );
 }

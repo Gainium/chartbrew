@@ -2,11 +2,12 @@ import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
 import {
-  Container, Loader, Header, Message, Icon, Popup, Button, Label,
-} from "semantic-ui-react";
+  Container, Loading, Row, Text, Popover, Link, Badge, Spacer,
+} from "@nextui-org/react";
 import moment from "moment";
 import { format } from "date-fns";
 import { enGB } from "date-fns/locale";
+import { CloseSquare, Filter2 } from "react-iconly";
 
 import {
   getEmbeddedChart as getEmbeddedChartAction,
@@ -15,12 +16,12 @@ import {
 import LineChart from "./Chart/components/LineChart";
 import BarChart from "./Chart/components/BarChart";
 import TableContainer from "./Chart/components/TableView/TableContainer";
-import { blackTransparent } from "../config/colors";
 import ChartFilters from "./Chart/components/ChartFilters";
 import PieChart from "./Chart/components/PieChart";
 import DoughnutChart from "./Chart/components/DoughnutChart";
 import RadarChart from "./Chart/components/RadarChart";
 import PolarChart from "./Chart/components/PolarChart";
+import logo from "../assets/logo_inverted.png";
 
 const pageHeight = window.innerHeight;
 
@@ -34,6 +35,7 @@ function EmbeddedChart(props) {
   const [chart, setChart] = useState(null);
   const [error, setError] = useState(false);
   const [conditions, setConditions] = useState([]);
+  const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
     // change the background color to transparent
@@ -75,9 +77,14 @@ function EmbeddedChart(props) {
     if (!found) newConditions.push(condition);
     setConditions(newConditions);
 
+    setDataLoading(true);
     runQueryWithFilters(chart.project_id, chart.id, newConditions)
       .then((data) => {
+        setDataLoading(false);
         setChart(data);
+      })
+      .catch(() => {
+        setDataLoading(false);
       });
   };
 
@@ -112,154 +119,174 @@ function EmbeddedChart(props) {
 
   if (loading || !chart) {
     return (
-      <Container textAlign="center" text style={styles.loaderContainer}>
-        <Loader active inverted>Loading</Loader>
+      <Container justify="center" css={{ ...styles.loaderContainer, pt: 50 }}>
+        <Row justify="center" align="center">
+          <Loading type="points">Loading the chart</Loading>
+        </Row>
       </Container>
     );
   }
 
   if (error) {
     return (
-      <Container text>
-        <Message>
-          <Message.Header>Error loading the Chart</Message.Header>
-          <p>
-            The Chart might not be public in the ChartBrew dashboard.
-          </p>
-        </Message>
+      <Container css={{ backgroundColor: "$blue300", p: 10 }}>
+        <Row>
+          <Text h5>{"Error loading the Chart"}</Text>
+        </Row>
+        <Row>
+          <Text>The Chart might not be public in the ChartBrew dashboard.</Text>
+        </Row>
       </Container>
     );
   }
 
   return (
     <div style={styles.container}>
-      <Container>
-        <Container fluid style={styles.header(chart.type)}>
-          <Header style={{ display: "contents" }}>{chart.name}</Header>
+      <Container fluid style={styles.header(chart.type)}>
+        <Row justify="space-between">
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <Text b size="1.1em" css={{ color: "$text", lineHeight: "$xs" }}>{chart.name}</Text>
+            <Spacer x={0.5} />
+            {chart.Datasets && conditions.map((c) => {
+              return (
+                <Badge color="primary" variant={"flat"} key={c.id} size="sm" css={{ p: 0, pl: 5, pr: 5 }}>
+                  {c.type !== "date" && `${c.value}`}
+                  {c.type === "date" && format(new Date(c.value), "Pp", { locale: enGB })}
+                  <Spacer x={0.2} />
+                  <Link onClick={() => _onClearFilter(c)} css={{ color: "$text" }}>
+                    <CloseSquare size="small" />
+                  </Link>
+                </Badge>
+              );
+            })}
+          </div>
+
           {chart.chartData && (
             <div>
               <p>
                 {_checkIfFilters() && (
-                  <Popup
-                    trigger={(
-                      <Button
-                        icon="filter"
-                        direction="left"
-                        basic
-                        className="circular icon"
-                        style={styles.filterBtn}
-                      />
-                    )}
-                    on="click"
-                    flowing
-                    size="tiny"
-                  >
-                    <ChartFilters
-                      chart={chart}
-                      onAddFilter={_onAddFilter}
-                      onClearFilter={_onClearFilter}
-                      conditions={conditions}
-                    />
-                  </Popup>
-                )}
-                {chart.Datasets && (
-                  <Label.Group style={{ display: "inline", marginLeft: 10 }} size="small">
-                    {conditions.map((c) => {
-                      return (
-                        <Label key={c.id} icon>
-                          {c.type !== "date" && c.value}
-                          {c.type === "date" && format(new Date(c.value), "Pp", { locale: enGB })}
-                          <Icon name="delete" onClick={() => _onClearFilter(c)} />
-                        </Label>
-                      );
-                    })}
-                  </Label.Group>
+                  <Popover>
+                    <Popover.Trigger>
+                      <Link css={{ color: "$accents6" }}>
+                        <Filter2 set="light" />
+                      </Link>
+                    </Popover.Trigger>
+                    <Popover.Content>
+                      <Container css={{ pt: 10, pb: 10 }}>
+                        <ChartFilters
+                          chart={chart}
+                          onAddFilter={_onAddFilter}
+                          onClearFilter={_onClearFilter}
+                          conditions={conditions}
+                        />
+                      </Container>
+                    </Popover.Content>
+                  </Popover>
                 )}
               </p>
             </div>
           )}
+        </Row>
+      </Container>
+      <Spacer y={0.5} />
+      {chart.type === "line"
+        && (
+        <div>
+          <LineChart chart={chart} height={pageHeight - 100} />
+        </div>
+        )}
+      {chart.type === "bar"
+        && (
+        <Container>
+          <BarChart chart={chart} height={pageHeight - 100} />
         </Container>
-        {chart.type === "line"
-          && (
-          <Container fluid>
-            <LineChart chart={chart} height={pageHeight - 100} />
-          </Container>
-          )}
-        {chart.type === "bar"
-          && (
-          <Container fluid>
-            <BarChart chart={chart} height={pageHeight - 100} />
-          </Container>
-          )}
-        {chart.type === "pie"
-          && (
-          <Container fluid>
-            <PieChart
-              chart={chart}
-              height={pageHeight - 100}
-            />
-          </Container>
-          )}
-        {chart.type === "doughnut"
-          && (
-          <Container fluid>
-            <DoughnutChart
-              chart={chart}
-              height={pageHeight - 100}
-            />
-          </Container>
-          )}
-        {chart.type === "radar"
-          && (
-          <Container fluid>
-            <RadarChart
-              chart={chart}
-              height={pageHeight - 100}
-            />
-          </Container>
-          )}
-        {chart.type === "polar"
-          && (
-          <Container fluid>
-            <PolarChart
-              chart={chart}
-              height={pageHeight - 100}
-            />
-          </Container>
-          )}
-        {chart.type === "table"
-          && (
-          <Container fluid>
-            <TableContainer
-              height={pageHeight - 100}
-              tabularData={chart.chartData}
-              embedded
-            />
-          </Container>
-          )}
-        <div style={{ marginTop: 5 }}>
-          <small>
+        )}
+      {chart.type === "pie"
+        && (
+        <Container>
+          <PieChart
+            chart={chart}
+            height={pageHeight - 100}
+          />
+        </Container>
+        )}
+      {chart.type === "doughnut"
+        && (
+        <Container>
+          <DoughnutChart
+            chart={chart}
+            height={pageHeight - 100}
+          />
+        </Container>
+        )}
+      {chart.type === "radar"
+        && (
+        <Container>
+          <RadarChart
+            chart={chart}
+            height={pageHeight - 100}
+          />
+        </Container>
+        )}
+      {chart.type === "polar"
+        && (
+        <Container>
+          <PolarChart
+            chart={chart}
+            height={pageHeight - 100}
+          />
+        </Container>
+        )}
+      {chart.type === "table"
+        && (
+        <Container>
+          <TableContainer
+            height={pageHeight - 100}
+            tabularData={chart.chartData}
+            embedded
+            datasets={chart.Datasets}
+          />
+        </Container>
+        )}
+      <Spacer y={0.5} />
+      <Container css={{ pr: 0, pl: 0 }}>
+        <Row justify="space-between" align="center">
+          <div>
             {!loading && (
-              <i>
-                <span title="Last updated">{`${_getUpdatedTime(chart.chartDataUpdated)}`}</span>
-              </i>
+              <Text i small css={{ color: "$accents6" }} title="Last updated">
+                {dataLoading && (
+                  <>
+                    <Loading type="spinner" size="xs" inlist />
+                    <Spacer x={0.2} />
+                    <Text small>{"Updating..."}</Text>
+                  </>
+                )}
+                {!dataLoading && `${_getUpdatedTime(chart.chartDataUpdated)}`}
+              </Text>
             )}
             {loading && (
               <>
-                <Icon name="spinner" loading />
-                <span>{" Updating..."}</span>
+                <Loading type="spinner" size="xs" inlist />
+                <Spacer x={0.2} />
+                <Text small css={{ color: "$accents6" }}>{"Updating..."}</Text>
               </>
             )}
-          </small>
+          </div>
           {chart.showBranding && (
-            <small style={{ color: blackTransparent(0.5), float: "right" }}>
-              {"Powered by "}
-              <a href="https://chartbrew.com" target="_blank" rel="noreferrer">
-                Chartbrew
-              </a>
-            </small>
+            <Link href="https://chartbrew.com" target="_blank" rel="noreferrer" css={{ color: "$primary", ai: "flex-end" }}>
+              <img
+                src={logo}
+                width="15"
+                alt="Chartbrew logo"
+              />
+              <Spacer x={0.2} />
+              <Text small css={{ color: "$accents6" }}>
+                <strong>Chart</strong>
+                brew
+              </Text>
+            </Link>
           )}
-        </div>
+        </Row>
       </Container>
     </div>
   );
@@ -269,11 +296,11 @@ const styles = {
   container: {
     flex: 1,
     backgroundColor: "transparent",
-    padding: 10,
+    padding: 20,
   },
   header: (type) => ({
-    paddingRight: type === "table" ? 0 : 20,
-    paddingLeft: type === "table" ? 0 : 20,
+    paddingLeft: 0,
+    paddingRight: 0,
     paddingBottom: type === "table" ? 10 : 0,
   }),
   loaderContainer: {

@@ -4,21 +4,30 @@ import { connect } from "react-redux";
 import { withRouter } from "react-router";
 import { Link } from "react-router-dom";
 import {
-  Menu, Dropdown, Dimmer, Container, Loader, Icon, Modal, Button, Image,
-  TransitionablePortal, Input, Label,
-} from "semantic-ui-react";
+  Loading, Modal, Row, Container, Link as LinkNext, Image, Spacer,
+  Dropdown, Button, Navbar, Text, Grid, Card, useTheme, Tooltip,
+} from "@nextui-org/react";
+import {
+  Category, Discovery, Document, Edit, Heart, Logout, Send, Setting, User
+} from "react-iconly";
+import { FaDiscord, FaGithub } from "react-icons/fa";
+import { BsSun, BsMoonFill } from "react-icons/bs";
+import { IoContrastSharp } from "react-icons/io5";
 import { createMedia } from "@artsy/fresnel";
-import { useWindowSize } from "react-use";
+import useDarkMode from "@fisch0920/use-dark-mode";
+import { useLocalStorage } from "react-use";
 
 import { getTeam } from "../actions/team";
 import { logout } from "../actions/user";
 import { getProject, changeActiveProject } from "../actions/project";
 import { getProjectCharts } from "../actions/chart";
 import FeedbackForm from "./FeedbackForm";
-import cbLogo from "../assets/logo_inverted.png";
+import cbLogo from "../assets/logo_blue.png";
+import cbLogoInverted from "../assets/logo_inverted.png";
 import canAccess from "../config/canAccess";
 import { DOCUMENTATION_HOST, SITE_HOST } from "../config/settings";
-import { blue, dark } from "../config/colors";
+import { dark, darkBlue } from "../config/colors";
+import useThemeDetector from "../modules/useThemeDetector";
 
 const AppMedia = createMedia({
   breakpoints: {
@@ -32,19 +41,20 @@ const { Media } = AppMedia;
 /*
   The navbar component used throughout the app
 */
-function Navbar(props) {
-  const [loading, setLoading] = useState(true);
+function NavbarContainer(props) {
   const [changelogPadding, setChangelogPadding] = useState(true);
   const [feedbackModal, setFeedbackModal] = useState();
   const [teamOwned, setTeamOwned] = useState({});
-  const [projectSearch, setProjectSearch] = useState("");
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [isOsTheme, setIsOsTheme] = useLocalStorage("osTheme", false);
 
   const {
-    getTeam, getProject, changeActiveProject, color,
-    hideTeam, transparent, team, teams, projectProp, user, logout,
+    team, teams, user, logout,
   } = props;
 
-  const { width } = useWindowSize();
+  const darkMode = useDarkMode(false);
+  const { isDark } = useTheme();
+  const isSystemDark = useThemeDetector();
 
   useEffect(() => {
     // _onTeamChange(match.params.teamId, match.params.projectId);
@@ -72,26 +82,6 @@ function Navbar(props) {
     }
   }, [teams]);
 
-  const _onTeamChange = (teamId, projectId) => {
-    setLoading(true);
-    getTeam(teamId)
-      .then(() => {
-        setLoading(false);
-        return new Promise(resolve => resolve(true));
-      })
-      .then(() => {
-        return getProject(projectId);
-      })
-      .then(() => {
-        return changeActiveProject(projectId);
-      })
-      .then(() => {
-        window.location.href = (`/${teamId}/${projectId}/dashboard`);
-        // window.reload();
-      })
-      .catch(() => {});
-  };
-
   const _canAccess = (role, teamData) => {
     if (teamData) {
       return canAccess(role, user.id, teamData.TeamRoles);
@@ -99,223 +89,309 @@ function Navbar(props) {
     return canAccess(role, user.id, team.TeamRoles);
   };
 
-  const handleItemClick = () => {
-    // TODO
+  const _setOSTheme = () => {
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      darkMode.enable();
+    } else {
+      darkMode.disable();
+    }
+
+    window.localStorage.removeItem("darkMode");
+    setIsOsTheme(true);
+  };
+
+  const _setTheme = (mode) => {
+    setIsOsTheme(false);
+    if (mode === "dark") {
+      darkMode.enable();
+    } else {
+      darkMode.enable();
+      setTimeout(() => {
+        darkMode.disable();
+      }, 100);
+    }
   };
 
   if (!team.id && !teams) {
     return (
-      <Container text style={styles.container}>
-        <Dimmer active={loading}>
-          <Loader />
-        </Dimmer>
-      </Container>
+      <Modal open blur>
+        <Modal.Body>
+          <Container md>
+            <Row justify="center" align="center">
+              <Loading size="lg" />
+            </Row>
+          </Container>
+        </Modal.Body>
+      </Modal>
     );
   }
   return (
-    <Menu fixed="top" color="violet" inverted secondary={width < 768} style={{ backgroundColor: color }}>
-      <Menu.Item style={styles.logoContainer} as={Link} to="/user">
-        <Image centered as="img" src={cbLogo} alt="Chartbrew logo" style={styles.logo} />
-      </Menu.Item>
-      <Menu.Item as={Link} to="/user">
-        <Icon name="th" />
-        Home
-      </Menu.Item>
-      {!hideTeam
-        && (
-        <Menu.Menu
-          onClick={handleItemClick}
-        >
-          <Media greaterThan="mobile">
-            <Dropdown
-              text={team.name}
-              item
-              style={styles.centeredDropdown}
-            >
-              <Dropdown.Menu>
-                <Dropdown.Header>{"Quick access to your projects"}</Dropdown.Header>
-                <Dropdown.Divider />
-                {teams && teams.map((t) => {
-                  return (
-                    t.Projects.length > 0
-                    && (
-                    <Dropdown
-                      disabled={t.Projects.length < 1}
-                      item
-                      key={t.id}
-                      text={t.name}
-                      >
-                      <Dropdown.Menu>
-                        <Input
-                          icon="search"
-                          iconPosition="left"
-                          className="search"
-                          onClick={(e) => e.stopPropagation()}
-                          onFocus={(e) => e.stopPropagation()}
-                          onChange={(e, data) => setProjectSearch(data.value)}
-                        />
-                        <Dropdown.Menu scrolling>
-                          {t.Projects.map((project) => {
-                            if (projectSearch
-                              && project.name.toLowerCase()
-                                .indexOf(projectSearch.toLowerCase()) === -1) {
-                              return (<span key={project.id} />);
-                            }
-                            return (
-                              <Dropdown.Item
-                                onClick={() => _onTeamChange(t.id, project.id)}
-                                disabled={project.id === projectProp.id}
-                                key={project.id}>
-                                {project.id === projectProp.id
-                                && (
-                                <span className="label">
-                                  Active
-                                </span>
-                                )}
-                                <span>
-                                  {" "}
-                                  {project.name}
-                                  {" "}
-                                </span>
-                              </Dropdown.Item>
-                            );
-                          })}
-                        </Dropdown.Menu>
-                      </Dropdown.Menu>
-                    </Dropdown>
-                    )
-                  );
-                }) }
-              </Dropdown.Menu>
-            </Dropdown>
-          </Media>
-        </Menu.Menu>
-        )}
+    <Navbar variant="sticky" disableShadow isBordered isCompact maxWidth="fluid" css={{ zIndex: 999 }}>
+      <Navbar.Brand>
+        <Link to="/user">
+          <Image src={isDark ? cbLogoInverted : cbLogo} alt="Chartbrew Logo" style={styles.logo} />
+        </Link>
+        <Spacer x={1} />
+        <Link to="/user">
+          <LinkNext href="/user" css={{ color: "$text" }}>
+            <Row align="center">
+              <Category size="small" />
+              <Spacer x={0.2} />
+              <Text>{"Home"}</Text>
+            </Row>
+          </LinkNext>
+        </Link>
+      </Navbar.Brand>
+      <Navbar.Content>
+        <Navbar.Item>
+          <LinkNext
+            className="changelog-trigger"
+            title="Changelog"
+            css={{ ai: "center", color: "$text" }}
+          >
+            <Media greaterThan="mobile">
+              <span>Updates</span>
+            </Media>
+            <span className="changelog-badge">
+              {changelogPadding && <span style={{ paddingLeft: 16, paddingRight: 16 }} />}
+            </span>
+          </LinkNext>
+        </Navbar.Item>
 
-      <Menu.Menu position="right">
-        <Menu.Item
-          className="changelog-trigger"
-          as="a"
-          style={{ paddingTop: 0, paddingBottom: 0, paddingLeft: 0 }}
-          title="Changelog"
-        >
-          <div className="changelog-badge">
-            {changelogPadding && <span style={{ paddingLeft: 16, paddingRight: 16 }} />}
-          </div>
-          <Media greaterThan="mobile">
-            <span>Updates</span>
-          </Media>
-          <Media at="mobile">
-            <Icon name="wifi" />
-          </Media>
-        </Menu.Item>
-        <Dropdown
-          style={{ paddingTop: 0, paddingBottom: 0 }}
-          item
-          icon={width < 768 ? null : "dropdown"}
-          floating={transparent}
-          trigger={(
-            <>
-              <Icon name="life ring outline" />
-              <Media greaterThan="mobile">
-                Help
-              </Media>
-            </>
-          )}
-        >
+        <Dropdown isBordered>
+          <Navbar.Item>
+            <Dropdown.Button
+              light
+              ripple={false}
+              css={{
+                px: 0,
+                dflex: "center",
+                svg: { pe: "none" },
+              }}
+              icon={<Heart set="curved" size={20} />}
+            >
+              Help
+            </Dropdown.Button>
+          </Navbar.Item>
           <Dropdown.Menu>
-            <Dropdown.Item
-              as="a"
-              href="https://discord.gg/KwGEbFk"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Icon name="discord" />
-              Join our Discord
+            <Dropdown.Item icon={<FaDiscord size={24} />}>
+              <LinkNext
+                href="https://discord.gg/KwGEbFk"
+                target="_blank"
+                rel="noopener noreferrer"
+                css={{ color: "$text", minWidth: "100%" }}
+              >
+                <Text>{"Join our Discord"}</Text>
+              </LinkNext>
             </Dropdown.Item>
-            <Dropdown.Item
-              as="a"
-              href="https://chartbrew.com/blog/tag/tutorial/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Icon name="student" />
-              Tutorials
+            <Dropdown.Item icon={<Discovery />}>
+              <LinkNext
+                href="https://chartbrew.com/blog/tag/tutorial/"
+                target="_blank"
+                rel="noopener noreferrer"
+                css={{ color: "$text", minWidth: "100%" }}
+              >
+                <Text>{"Tutorials"}</Text>
+              </LinkNext>
             </Dropdown.Item>
-            <Menu.Item
-              as="a"
-              href={DOCUMENTATION_HOST}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Icon name="book" />
-              Documentation
-            </Menu.Item>
-            <Dropdown.Item
-              as="a"
-              href="https://github.com/chartbrew/chartbrew/discussions"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Icon name="github" />
-              GitHub
+            <Dropdown.Item icon={<Document />}>
+              <LinkNext
+                href={DOCUMENTATION_HOST}
+                target="_blank"
+                rel="noopener noreferrer"
+                css={{ color: "$text", minWidth: "100%" }}
+              >
+                <Text>{"Documentation"}</Text>
+              </LinkNext>
             </Dropdown.Item>
-            <Dropdown.Divider />
-            <Dropdown.Item onClick={() => setFeedbackModal(true)}>
-              <Icon name="lightbulb outline" />
-              Feedback
+            <Dropdown.Item icon={<FaGithub size={24} />}>
+              <LinkNext
+                href="https://github.com/chartbrew/chartbrew/discussions"
+                target="_blank"
+                rel="noopener noreferrer"
+                css={{ color: "$text", minWidth: "100%" }}
+              >
+                <Text>{"GitHub"}</Text>
+              </LinkNext>
             </Dropdown.Item>
-            <Dropdown.Divider />
-            <Dropdown.Item as="a" href={`${SITE_HOST}/start`}>
-              <Label color="olive" size="small">New</Label>
-              Project starter
+            <Dropdown.Item icon={<Edit />}>
+              <LinkNext onClick={() => setFeedbackModal(true)} css={{ color: "$text", minWidth: "100%" }}>
+                <Text>{"Feedback"}</Text>
+              </LinkNext>
+            </Dropdown.Item>
+            <Dropdown.Item withDivider icon={<Send />}>
+              <LinkNext href={`${SITE_HOST}/start`} css={{ color: "$text", minWidth: "100%" }}>
+                <Text>{"Project starter"}</Text>
+              </LinkNext>
             </Dropdown.Item>
           </Dropdown.Menu>
         </Dropdown>
-        <Dropdown
-          style={{ paddingTop: 0, paddingBottom: 0 }}
-          item
-          floating={transparent}
-          icon={width < 768 ? null : "dropdown"}
-          trigger={<Icon name="user outline" />}
-        >
+
+        <Dropdown>
+          <Navbar.Item>
+            <Dropdown.Button light ripple={false} css={{ minWidth: "fit-content" }} icon={<User />} />
+          </Navbar.Item>
           <Dropdown.Menu>
-            <Dropdown.Item as={Link} to="/edit">Profile</Dropdown.Item>
+            <Dropdown.Item icon={<User />}>
+              <Link to="/edit">
+                <Text>
+                  Profile
+                </Text>
+              </Link>
+            </Dropdown.Item>
 
-            {_canAccess("admin", teamOwned) && <Dropdown.Item as={Link} to={`/manage/${team.id || teamOwned.id}/settings`}>Account settings</Dropdown.Item>}
+            {_canAccess("admin", teamOwned) && (
+              <Dropdown.Item icon={<Setting />}>
+                <Link to={`/manage/${team.id || teamOwned.id}/settings`}>
+                  <Text
+                    css={{ color: "$text", width: "100%" }}
+                  >
+                    Account settings
+                  </Text>
+                </Link>
+              </Dropdown.Item>
+            )}
 
-            <Dropdown.Divider />
-            <Dropdown.Item onClick={logout}>
-              <Icon name="sign out" />
-              Sign out
+            <Dropdown.Item
+              icon={isDark
+                ? <BsSun style={{ marginLeft: 3 }} size={20} />
+                : <BsMoonFill style={{ marginLeft: 3 }} size={20} />}
+              command={(
+                <Tooltip content="Theme settings" css={{ zIndex: 999999 }} placement="leftEnd">
+                  <div>
+                    <LinkNext onClick={() => setShowAppearance(true)} color="primary">
+                      <Setting />
+                    </LinkNext>
+                  </div>
+                </Tooltip>
+              )}
+            >
+              <LinkNext onClick={() => _setTheme(isDark ? "light" : "dark")}>
+                <Text css={{ color: "$text" }}>
+                  {isDark && "Light mode"}
+                  {!isDark && "Dark mode"}
+                </Text>
+              </LinkNext>
+            </Dropdown.Item>
+
+            <Dropdown.Item withDivider icon={<Logout />}>
+              <LinkNext onClick={logout} css={{ color: "$text", width: "100%" }}>
+                Sign out
+              </LinkNext>
             </Dropdown.Item>
           </Dropdown.Menu>
         </Dropdown>
-      </Menu.Menu>
+      </Navbar.Content>
 
-      <TransitionablePortal open={feedbackModal}>
-        <Modal
-          open={feedbackModal}
-          size="small"
-          onClose={() => setFeedbackModal(false)}
-        >
-          <Modal.Content>
-            <FeedbackForm />
-          </Modal.Content>
-          <Modal.Actions>
-            <Button onClick={() => setFeedbackModal(false)}>
-              Cancel
-            </Button>
-          </Modal.Actions>
-        </Modal>
-      </TransitionablePortal>
-    </Menu>
+      <Modal
+        open={feedbackModal}
+        onClose={() => setFeedbackModal(false)}
+      >
+        <Modal.Body>
+          <FeedbackForm />
+        </Modal.Body>
+        <Modal.Footer>
+          <Button flat color="warning" onClick={() => setFeedbackModal(false)} auto>
+            Cancel
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal open={showAppearance} onClose={() => setShowAppearance(false)} width="500px">
+        <Modal.Header>
+          <Text h4>Chartbrew UI Appearance</Text>
+        </Modal.Header>
+        <Modal.Body>
+          <Container css={{ pt: 20, pb: 20 }}>
+            <Row>
+              <Text b>Choose the theme</Text>
+            </Row>
+            <Grid.Container gap={2}>
+              <Grid xs={6} sm={4}>
+                <Card
+                  isHoverable
+                  isPressable
+                  borderWeight={!isDark && !isOsTheme ? "extrabold" : "normal"}
+                  onClick={() => _setTheme("light")}
+                  css={{
+                    backgroundColor: "white",
+                    borderColor: !isDark && !isOsTheme ? "$secondary" : "$neutralBorder"
+                  }}
+                  variant={"bordered"}
+                >
+                  <Card.Body>
+                    <BsSun size={24} color="black" />
+                    <Spacer x={0.2} />
+                    <Text h5 color="black">Light</Text>
+                  </Card.Body>
+                </Card>
+              </Grid>
+              <Grid xs={6} sm={4}>
+                <Card
+                  isPressable
+                  isHoverable
+                  css={{
+                    backgroundColor: darkBlue,
+                    borderColor: isDark && !isOsTheme ? "$secondary" : "$neutralBorder"
+                  }}
+                  borderWeight={isDark && !isOsTheme ? "extrabold" : "normal"}
+                  onClick={() => _setTheme("dark")}
+                  variant={"bordered"}
+                >
+                  <Card.Body>
+                    <BsMoonFill size={24} color="white" />
+                    <Spacer x={0.2} />
+                    <Text h5 color="white">Dark</Text>
+                  </Card.Body>
+                </Card>
+              </Grid>
+              <Grid xs={6} sm={4}>
+                <Card
+                  isHoverable
+                  isPressable
+                  variant={"bordered"}
+                  onClick={_setOSTheme}
+                  borderWeight={isOsTheme ? "extrabold" : "normal"}
+                  css={{
+                    backgroundColor: isSystemDark ? darkBlue : "white",
+                    borderColor: isOsTheme ? "$secondary" : "$neutralBorder"
+                  }}
+                >
+                  <Card.Body>
+                    <IoContrastSharp size={24} color={isSystemDark ? "white" : "black"} />
+                    <Spacer x={0.2} />
+                    <Text h5 css={{ color: isSystemDark ? "white" : "black" }}>System</Text>
+                  </Card.Body>
+                </Card>
+              </Grid>
+            </Grid.Container>
+          </Container>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            flat
+            color="warning"
+            onClick={() => setShowAppearance(false)}
+            auto
+          >
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </Navbar>
   );
 }
 
 const styles = {
   container: {
     flex: 1,
+  },
+  navContainer: {
+    top: 0,
+    height: 40,
+    position: "sticky",
+    background: "transparent",
+    zIndex: 999,
   },
   centeredDropdown: {
     display: "block",
@@ -335,24 +411,11 @@ const styles = {
   },
 };
 
-Navbar.defaultProps = {
-  hideTeam: false,
-  transparent: false,
-  color: blue,
-};
-
-Navbar.propTypes = {
+NavbarContainer.propTypes = {
   user: PropTypes.object.isRequired,
   team: PropTypes.object.isRequired,
   teams: PropTypes.array.isRequired,
-  projectProp: PropTypes.object.isRequired,
-  getTeam: PropTypes.func.isRequired,
-  getProject: PropTypes.func.isRequired,
-  changeActiveProject: PropTypes.func.isRequired,
   logout: PropTypes.func.isRequired,
-  hideTeam: PropTypes.bool,
-  transparent: PropTypes.bool,
-  color: PropTypes.string,
 };
 
 const mapStateToProps = (state) => {
@@ -374,4 +437,4 @@ const mapDispatchToProps = (dispatch) => {
   };
 };
 
-export default withRouter(connect(mapStateToProps, mapDispatchToProps)(Navbar));
+export default withRouter(connect(mapStateToProps, mapDispatchToProps)(NavbarContainer));

@@ -1,32 +1,27 @@
 import React, { useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { Menu } from "semantic-ui-react";
-import { createMedia } from "@artsy/fresnel";
+import {
+  Button, Row, Spacer
+} from "@nextui-org/react";
+import { ChevronDownCircle, ChevronUpCircle } from "react-iconly";
 
 import TableComponent from "./TableComponent";
 
-const AppMedia = createMedia({
-  breakpoints: {
-    mobile: 0,
-    tablet: 768,
-    computer: 1024,
-  },
-});
-const { Media } = AppMedia;
-
 function TableContainer(props) {
-  const { tabularData, height, embedded } = props;
+  const {
+    tabularData, height, embedded, chartSize, datasets,
+  } = props;
 
-  const [activeDataset, setActiveDataset] = useState("");
+  const [activeDataset, setActiveDataset] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    if (tabularData && !activeDataset) {
-      setActiveDataset(Object.keys(tabularData)[0]);
-    } else if (!tabularData[activeDataset]) {
-      setActiveDataset(Object.keys(tabularData)[0]);
+    if (datasets && datasets[0] && !activeDataset) {
+      setActiveDataset(datasets[0]);
+    } else if (activeDataset) {
+      setActiveDataset(datasets.find((d) => d.id === activeDataset.id));
     }
-  }, [tabularData]);
+  }, [datasets]);
 
   const _onExpand = () => {
     setExpanded(!expanded);
@@ -34,55 +29,54 @@ function TableContainer(props) {
 
   return (
     <div>
-      <Menu secondary stackable>
-        {Object.keys(tabularData).map((dataset) => {
+      <Row align="center">
+        {activeDataset && datasets.map((dataset) => {
           return (
-            <Menu.Item
-              name={dataset}
-              onClick={() => setActiveDataset(dataset)}
-              active={activeDataset === dataset}
-              key={dataset}
-            />
+            <>
+              <Button
+                onClick={() => setActiveDataset(dataset)}
+                color="primary"
+                light={activeDataset.id !== dataset.id}
+                bordered={activeDataset.id === dataset.id}
+                auto
+                key={dataset.id}
+                size={chartSize === 1 ? "xs" : "sm"}
+              >
+                {dataset.legend}
+              </Button>
+              <Spacer x={0.2} />
+            </>
           );
         })}
+        <Spacer x={0.2} />
         {!embedded && (
-          <>
-            <Media greaterThan="mobile">
-              <Menu.Item
-                name={expanded ? "See less" : "See more"}
-                icon={expanded ? "arrow up" : "arrow down"}
-                onClick={() => _onExpand()}
-                style={styles.seeMore}
-              />
-            </Media>
-            <Media at="mobile">
-              <Menu.Item
-                name={expanded ? "See less" : "See more"}
-                icon={expanded ? "arrow up" : "arrow down"}
-                onClick={() => _onExpand()}
-                style={{ margin: 0, marginTop: 5 }}
-              />
-            </Media>
-          </>
+          <Button
+            icon={expanded ? <ChevronUpCircle /> : <ChevronDownCircle />}
+            onClick={() => _onExpand()}
+            auto
+            size={chartSize === 1 ? "xs" : "sm"}
+            light
+          >
+            {expanded ? "See less" : "See more"}
+          </Button>
         )}
-      </Menu>
-      {activeDataset && tabularData[activeDataset] && tabularData[activeDataset].columns && (
-        <TableComponent
-          height={expanded ? height + 200 : height}
-          columns={tabularData[activeDataset].columns}
-          data={tabularData[activeDataset].data}
-          embedded={embedded}
-        />
-      )}
+      </Row>
+      <Spacer y={0.5} />
+      {activeDataset?.legend
+        && tabularData[activeDataset.legend]
+        && tabularData[activeDataset.legend].columns
+        && (
+          <TableComponent
+            height={expanded ? height + 200 : chartSize > 1 ? height + 3 : height + 12}
+            columns={tabularData[activeDataset.legend].columns}
+            data={tabularData[activeDataset.legend].data}
+            embedded={embedded}
+            dataset={activeDataset}
+          />
+        )}
     </div>
   );
 }
-
-const styles = {
-  seeMore: {
-    border: "solid 1px #e8e8e8",
-  },
-};
 
 TableContainer.defaultProps = {
   height: 300,
@@ -91,6 +85,8 @@ TableContainer.defaultProps = {
 
 TableContainer.propTypes = {
   tabularData: PropTypes.object.isRequired,
+  chartSize: PropTypes.number.isRequired,
+  datasets: PropTypes.array.isRequired,
   height: PropTypes.number,
   embedded: PropTypes.bool,
 };

@@ -10,6 +10,27 @@ module.exports = (app) => {
   const projectController = new ProjectController();
   const teamController = new TeamController();
 
+  const checkPublicAccess = (req, requiredAccess) => {
+    return projectController.findById(req.params.project_id)
+      .then((project) => {
+        if (project.passwordProtected) {
+          const passwordInput = req.body?.password || req.query?.password;
+          if (passwordInput !== project.password) {
+            return Promise.reject(401);
+          }
+        }
+
+        return teamController.findById(project.team_id);
+      })
+      .then((team) => {
+        if (requiredAccess === "export" && team.allowReportExport) {
+          return team;
+        }
+
+        return Promise.reject(401);
+      });
+  };
+
   const checkAccess = (req) => {
     let gProject;
     return projectController.findById(req.params.project_id)
@@ -450,6 +471,78 @@ module.exports = (app) => {
   // --------------------------------------------------------
 
   /*
+  ** Route to get latest chart data without an authentication token
+  */
+  app.get("/chart/:id", (req, res) => {
+    // check if the chart is on a public report first
+    return chartController.findById(req.params.id)
+      .then(async (chart) => {
+        const project = await projectController.findById(chart.project_id);
+
+        if (!project.public) throw new Error(401);
+        if (project.public
+          && project.passwordProtected
+          && req.query.password !== project.password
+        ) {
+          throw new Error(401);
+        }
+
+        const team = await teamController.findById(project.team_id);
+
+        return res.status(200).send({
+          id: chart.id,
+          name: chart.name,
+          type: chart.type,
+          subType: chart.subType,
+          chartDataUpdated: chart.chartDataUpdated,
+          chartData: chart.chartData,
+          Datasets: chart.Datasets,
+          mode: chart.mode,
+          chartSize: chart.chartSize,
+          project_id: chart.project_id,
+          showBranding: team.showBranding,
+          showGrowth: chart.showGrowth,
+          timeInterval: chart.timeInterval,
+        });
+      })
+      .catch((err) => {
+        return res.status(400).send(err);
+      });
+  });
+
+  /*
+  ** Route to run the query for a chart on a project that enables this
+  */
+  app.post("/chart/:id/query", (req, res) => {
+    return chartController.findById(req.params.id)
+      .then(async (chart) => {
+        const project = await projectController.findById(chart.project_id);
+
+        const team = await teamController.findById(project.team_id);
+
+        if (!team.allowReportRefresh) {
+          throw new Error(401);
+        }
+
+        return chartController.updateChartData(
+          req.params.id,
+          null,
+          {
+            noSource: req.query.no_source === "true",
+            skipParsing: req.query.skip_parsing === "true",
+            getCache: req.query.getCache,
+          },
+        );
+      })
+      .then((chart) => {
+        return res.status(200).send(chart);
+      })
+      .catch((err) => {
+        return res.status(400).send(err);
+      });
+  });
+
+  /*
   ** Route used to export data in spreadsheet format
   */
   app.post("/project/:project_id/chart/export", verifyToken, (req, res) => {
@@ -461,6 +554,29 @@ module.exports = (app) => {
         }
 
         return chartController.exportChartData(req.user.id, req.body.chartIds, req.body.filters);
+      })
+      .then((data) => {
+        return spreadsheetExport(data);
+      })
+      .then((fileBuffer) => {
+        return res.status(200).send(fileBuffer);
+      })
+      .catch((err) => {
+        return res.status(400).send({
+          message: (err && err.message) || err,
+          error: (err && err.toString()) || err,
+        });
+      });
+  });
+  // --------------------------------------------------------
+
+  /*
+  ** Route used to export data from a PUBLIC dashboard
+  */
+  app.post("/project/:project_id/chart/export/public/:chart_id", (req, res) => {
+    return checkPublicAccess(req, "export")
+      .then(() => {
+        return chartController.exportChartData(null, [req.params.chart_id], req.body.filters);
       })
       .then((data) => {
         return spreadsheetExport(data);

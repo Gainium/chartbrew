@@ -2,16 +2,12 @@ import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
 import {
-  Container, Button, Icon, Header, Image, Dimmer, Dropdown,
-  Popup, Segment, Checkbox, Loader,
-} from "semantic-ui-react";
+  Button, Checkbox, Container, Divider, Dropdown, Image, Input, Loading,
+  Row, Spacer, Text, Tooltip,
+} from "@nextui-org/react";
+import { ChevronDown, InfoCircle } from "react-iconly";
+import { HiRefresh } from "react-icons/hi";
 
-import lineChartImage from "../../../assets/charts/lineChart.jpg";
-import barChartImage from "../../../assets/charts/barChart.jpg";
-import radarChartImage from "../../../assets/charts/radarChart.jpg";
-import polarChartImage from "../../../assets/charts/polarChart.jpg";
-import pieChartImage from "../../../assets/charts/pieChart.jpg";
-import doughnutChartImage from "../../../assets/charts/doughnutChart.jpg";
 import LineChart from "../../Chart/components/LineChart";
 import BarChart from "../../Chart/components/BarChart";
 import RadarChart from "../../Chart/components/RadarChart";
@@ -29,7 +25,6 @@ import polarSvg from "../../../assets/chart-icons/svg/009-analytics-61.svg";
 import doughnutSvg from "../../../assets/chart-icons/svg/011-analytics-59.svg";
 import tableSvg from "../../../assets/chart-icons/svg/table.svg";
 import avgSvg from "../../../assets/chart-icons/svg/average_kpi.svg";
-import { primaryTransparent } from "../../../config/colors";
 
 const chartModes = [{
   key: "chart",
@@ -50,15 +45,11 @@ const chartModes = [{
 
 function ChartPreview(props) {
   const {
-    chart, onChange, onRefreshData, onRefreshPreview, chartLoading,
+    chart, onChange, onRefreshData, onRefreshPreview, chartLoading, datasets,
+    invalidateCache, changeCache,
   } = props;
 
   const [redraw, setRedraw] = useState(false);
-  const [useCache, setUseCache] = useState(false);
-
-  useEffect(() => {
-    setUseCache(!!window.localStorage.getItem("_cb_use_cache"));
-  }, []);
 
   useEffect(() => {
     _onRefreshPreview();
@@ -71,9 +62,13 @@ function ChartPreview(props) {
       newType.mode = "chart";
     }
 
-    if (data.type === "avg") {
+    if (data.type === "avg" && chart.type !== "avg") {
       newType.subType = "timeseries";
       newType.mode = "kpi";
+    } else if (data.type === "avg" && chart.type === "avg") {
+      newType.subType = "timeseries";
+      newType.mode = "chart";
+      newType.type = "line";
     }
 
     return onChange(newType);
@@ -90,12 +85,12 @@ function ChartPreview(props) {
     return onChange(updateData);
   };
 
-  const _onChangeMode = (e, data) => {
-    if (data.value === "chart" || data.value === "kpichart") {
+  const _onChangeMode = (key) => {
+    if (key === "chart" || key === "kpichart") {
       setRedraw(true);
     }
 
-    return onChange({ mode: data.value });
+    return onChange({ mode: key });
   };
 
   const _onChangeGrowth = () => {
@@ -115,25 +110,60 @@ function ChartPreview(props) {
 
   const _onRefreshData = () => {
     setRedraw(true);
-    setUseCache(!!window.localStorage.getItem("_cb_use_cache"));
     onRefreshData(!!window.localStorage.getItem("_cb_use_cache"));
   };
 
-  const _onChangeUseCache = () => {
-    if (window.localStorage.getItem("_cb_use_cache")) {
-      window.localStorage.removeItem("_cb_use_cache");
-      setUseCache(false);
-    } else {
-      window.localStorage.setItem("_cb_use_cache", true);
-      setUseCache(true);
-    }
-  };
-
   return (
-    <>
+    <Container
+      css={{
+        backgroundColor: "$backgroundContrast",
+        br: "$md",
+        "@xs": {
+          p: 20,
+        },
+        "@sm": {
+          p: 20,
+        },
+        "@md": {
+          p: 20,
+        },
+      }}
+    >
       {chart && chart.chartData && chart.Datasets && (
         <>
-          <Segment style={{ minHeight: 350 }}>
+          <Container style={{ minHeight: 350 }}>
+            <Row justify="flex-start" align="center">
+              <Button
+                onClick={_onRefreshData}
+                disabled={chartLoading}
+                size="sm"
+                iconRight={chartLoading ? <Loading type="spinner" /> : <HiRefresh size={18} />}
+                auto
+                color="primary"
+                ghost
+              >
+                {"Refresh chart"}
+              </Button>
+              <Spacer x={0.5} />
+              <Checkbox
+                isSelected={!invalidateCache}
+                onChange={changeCache}
+                size="sm"
+              >
+                {"Use cached data"}
+              </Checkbox>
+              <Spacer x={0.2} />
+              <Tooltip
+                content="Chartbrew will use cached data for extra editing speed ⚡️⚡️⚡️"
+              >
+                <InfoCircle size="small" />
+              </Tooltip>
+            </Row>
+            <Spacer y={0.5} />
+            <Row>
+              <Divider />
+            </Row>
+            <Spacer y={0.5} />
             {chart.type === "line"
               && (
                 <LineChart
@@ -191,6 +221,7 @@ function ChartPreview(props) {
                 <div>
                   <TableContainer
                     tabularData={chart.chartData}
+                    datasets={datasets}
                     height={400}
                     editMode
                   />
@@ -205,225 +236,187 @@ function ChartPreview(props) {
                   editMode
                 />
               )}
-          </Segment>
+          </Container>
+          <Spacer y={1} />
           <Container textAlign="center">
-            <Popup
-              trigger={(
+            <Row align="center" wrap="wrap" gap={1} justify="center">
+              <Tooltip
+                content={"Get the average value of all the points on the chart"}
+              >
                 <Button
-                  basic
-                  secondary={chart.type === "avg"}
+                  bordered={chart.type !== "avg"}
+                  color={chart.type === "avg" ? "secondary" : "primary"}
                   onClick={() => _onChangeChartType({ type: "avg" })}
-                  icon
+                  auto
+                  size="sm"
                 >
-                  <Image centered src={avgSvg} style={styles.chartCard} />
+                  <Image src={avgSvg} height={25} width={25} />
                 </Button>
-              )}
-              content={"Get the average value of all the points on the chart"}
-              position="bottom center"
-            />
-            <Popup
-              trigger={(
+              </Tooltip>
+              <Spacer x={0.1} />
+              <Tooltip
+                content={chart.subType.indexOf("AddTimeseries") > -1 ? "Turn accumulation off" : "Accumulate datasets"}
+              >
                 <Button
-                  basic
-                  secondary={chart.subType.indexOf("AddTimeseries") > -1}
+                  bordered={chart.subType.indexOf("AddTimeseries") === -1}
+                  color={chart.subType.indexOf("AddTimeseries") > -1 ? "secondary" : "primary"}
                   onClick={_toggleAccumulation}
                   disabled={chart.type !== "line" && chart.type !== "bar" && chart.type !== "avg"}
-                  icon
+                  auto
+                  size="sm"
                 >
-                  <Image centered src={accumulateSvg} style={styles.chartCard} />
+                  <Image src={accumulateSvg} height={25} width={25} />
                 </Button>
-              )}
-              content={chart.subType.indexOf("AddTimeseries") > -1 ? "Turn accumulation off" : "Accumulate datasets"}
-              position="bottom center"
-            />
-            <Popup
-              trigger={(
+              </Tooltip>
+              <Spacer x={0.5} />
+
+              <Tooltip content="Display data in a table view">
                 <Button
-                  basic
-                  primary={chart.type === "table"}
+                  bordered={chart.type !== "table"}
                   onClick={() => _onChangeChartType({ type: "table" })}
-                  icon
+                  auto
+                  size="sm"
                 >
-                  <Image centered src={tableSvg} style={styles.chartCard} />
+                  <Image src={tableSvg} height={25} width={25} />
                 </Button>
-              )}
-              content="Display data in a table view"
-              position="bottom center"
-            />
-            <Button.Group style={{ marginRight: 4 }}>
-              <Popup
-                trigger={(
-                  <Button
-                    basic
-                    primary={chart.type === "line"}
-                    onClick={() => _onChangeChartType({ type: "line" })}
-                    icon
-                  >
-                    <Image centered src={lineSvg} style={styles.chartCard} />
-                  </Button>
-                )}
-                content="Display as line chart"
-                position="bottom center"
-              />
-              <Popup
-                trigger={(
-                  <Button
-                    basic
-                    primary={chart.type === "bar"}
-                    onClick={() => _onChangeChartType({ type: "bar" })}
-                    icon
-                  >
-                    <Image centered src={barSvg} style={styles.chartCard} />
-                  </Button>
-                )}
-                content="Display as bar chart"
-                position="bottom center"
-              />
-            </Button.Group>
-            <Button.Group>
-              <Popup
-                trigger={(
-                  <Button
-                    basic
-                    primary={chart.type === "pie"}
-                    onClick={() => _onChangeChartType({ type: "pie" })}
-                    icon
-                  >
-                    <Image centered src={pieSvg} style={styles.chartCard} />
-                  </Button>
-                )}
-                content="Display as pie chart"
-                position="bottom center"
-              />
-              <Popup
-                trigger={(
-                  <Button
-                    basic
-                    primary={chart.type === "radar"}
-                    onClick={() => _onChangeChartType({ type: "radar" })}
-                    icon
-                  >
-                    <Image centered src={radarSvg} style={styles.chartCard} />
-                  </Button>
-                )}
-                content="Display as radar chart"
-                position="bottom center"
-              />
-              <Popup
-                trigger={(
-                  <Button
-                    basic
-                    primary={chart.type === "doughnut"}
-                    onClick={() => _onChangeChartType({ type: "doughnut" })}
-                    icon
-                  >
-                    <Image centered src={doughnutSvg} style={styles.chartCard} />
-                  </Button>
-                )}
-                content="Display as doughnut chart"
-                position="bottom center"
-              />
-              <Popup
-                trigger={(
-                  <Button
-                    basic
-                    primary={chart.type === "polar"}
-                    onClick={() => _onChangeChartType({ type: "polar" })}
-                    icon
-                  >
-                    <Image centered src={polarSvg} style={styles.chartCard} />
-                  </Button>
-                )}
-                content="Display as polar chart"
-                position="bottom center"
-              />
-            </Button.Group>
+              </Tooltip>
+              <Spacer x={0.5} />
+
+              <Tooltip content="Display as line chart">
+                <Button
+                  bordered={chart.type !== "line"}
+                  onClick={() => _onChangeChartType({ type: "line" })}
+                  auto
+                  size="sm"
+                >
+                  <Image src={lineSvg} height={25} width={25} />
+                </Button>
+              </Tooltip>
+              <Spacer x={0.1} />
+              <Tooltip content="Display as bar chart">
+                <Button
+                  bordered={chart.type !== "bar"}
+                  onClick={() => _onChangeChartType({ type: "bar" })}
+                  auto
+                  size="sm"
+                >
+                  <Image src={barSvg} width={25} height={25} />
+                </Button>
+              </Tooltip>
+              <Spacer x={0.5} />
+
+              <Tooltip content="Display as pie chart">
+                <Button
+                  bordered={chart.type !== "pie"}
+                  onClick={() => _onChangeChartType({ type: "pie" })}
+                  auto
+                  size="sm"
+                >
+                  <Image src={pieSvg} height={25} width={25} />
+                </Button>
+              </Tooltip>
+              <Spacer x={0.1} />
+              <Tooltip content="Display as radar chart">
+                <Button
+                  bordered={chart.type !== "radar"}
+                  onClick={() => _onChangeChartType({ type: "radar" })}
+                  auto
+                  size="sm"
+                >
+                  <Image src={radarSvg} height={25} width={25} />
+                </Button>
+              </Tooltip>
+              <Spacer x={0.1} />
+              <Tooltip content="Display as doughnut chart">
+                <Button
+                  bordered={chart.type !== "doughnut"}
+                  onClick={() => _onChangeChartType({ type: "doughnut" })}
+                  auto
+                  size="sm"
+                >
+                  <Image src={doughnutSvg} height={25} width={25} />
+                </Button>
+              </Tooltip>
+              <Spacer x={0.1} />
+              <Tooltip content="Display as polar chart">
+                <Button
+                  bordered={chart.type !== "polar"}
+                  onClick={() => _onChangeChartType({ type: "polar" })}
+                  auto
+                  size="sm"
+                >
+                  <Image src={polarSvg} height={25} width={25} />
+                </Button>
+              </Tooltip>
+            </Row>
           </Container>
         </>
       )}
 
       <Container textAlign="center">
         {chart && chart.type && !chart.chartData && (
-          <Dimmer.Dimmable active>
-            <Dimmer active inverted>
-              {chartLoading && <Loader active size="large">Creating your chart...</Loader>}
-              {!chartLoading && (
-                <Header as="h2">
-                  {"Just a few steps away from the perfect visualisation"}
-                  <Header.Subheader className="large">{"Create a dataset to get started"}</Header.Subheader>
-                </Header>
-              )}
-            </Dimmer>
-            <Image
-              src={
-                chart.type === "line" ? lineChartImage
-                  : chart.type === "bar" ? barChartImage
-                    : chart.type === "polar" ? polarChartImage
-                      : chart.type === "doughnut" ? doughnutChartImage
-                        : chart.type === "pie" ? pieChartImage
-                          : radarChartImage
-              }
-              centered
-              size="big"
-            />
-          </Dimmer.Dimmable>
+          <>
+            {chartLoading && (
+              <>
+                <Row>
+                  <Loading type="spinner" size="lg" />
+                </Row>
+                <Row>
+                  <Text b>Loading chart data...</Text>
+                </Row>
+                <Spacer y={1} />
+              </>
+            )}
+            {!chartLoading && (
+              <>
+                <Row justify="center">
+                  <Text h3>{"Create a dataset to get started"}</Text>
+                </Row>
+                <Spacer y={0.2} />
+              </>
+            )}
+          </>
         )}
       </Container>
 
       {chart && chart.type && chart.Datasets && chart.Datasets.length > 0 && (
-        <Container textAlign="center" style={styles.topBuffer}>
-          <div>
-            <Dropdown
-              options={chartModes}
-              selection
-              value={chart.mode}
-              onChange={_onChangeMode}
-              style={styles.modeSwitcher}
-              disabled={chart.type !== "line" && chart.type !== "bar"}
-            />
+        <Container style={styles.topBuffer}>
+          <Row align="center" justify="center">
+            <Dropdown isDisabled={chart.type !== "line" && chart.type !== "bar"}>
+              <Dropdown.Trigger>
+                <Input
+                  value={chart.mode && chartModes.find((mode) => mode.value === chart.mode).text}
+                  bordered
+                  contentRight={<ChevronDown />}
+                  disabled={chart.type !== "line" && chart.type !== "bar"}
+                />
+              </Dropdown.Trigger>
+              <Dropdown.Menu
+                onAction={(key) => _onChangeMode(key)}
+                selectedKeys={[chart.mode]}
+                selectionMode="single"
+              >
+                {chartModes.map((mode) => (
+                  <Dropdown.Item key={mode.value}>
+                    {mode.text}
+                  </Dropdown.Item>
+                ))}
+              </Dropdown.Menu>
+            </Dropdown>
+            <Spacer x={0.5} />
             <Checkbox
-              toggle
-              label="Show growth"
-              checked={chart.showGrowth}
+              isSelected={chart.showGrowth}
               onChange={_onChangeGrowth}
-              disabled={chart.mode === "chart"}
-            />
-          </div>
-          <div style={styles.topBuffer}>
-            <Button
-              onClick={_onRefreshPreview}
-              primary
-              basic
-              loading={chartLoading}
-              size="small"
+              isDisabled={chart.mode === "chart"}
+              size="sm"
             >
-              Refresh preview
-            </Button>
-            <Button
-              onClick={_onRefreshData}
-              primary
-              basic
-              loading={chartLoading}
-              size="small"
-            >
-              Re-process data
-            </Button>
-            {" "}
-            <Checkbox
-              label="Use cache"
-              checked={!!useCache}
-              onChange={_onChangeUseCache}
-            />
-            {" "}
-            <Popup
-              trigger={<Icon name="question circle outline" style={{ color: primaryTransparent(0.7) }} />}
-              content="If checked, Chartbrew will use cached data instead of making requests to your data source whenever possible."
-              inverted
-            />
-          </div>
+              Show growth
+            </Checkbox>
+          </Row>
+          <Spacer y={1} />
         </Container>
       )}
-    </>
+    </Container>
   );
 }
 
@@ -433,9 +426,6 @@ const styles = {
   },
   modeSwitcher: {
     marginRight: 10,
-  },
-  chartCard: {
-    height: 25,
   },
   chartCardContainer: {
     background: "white",
@@ -468,6 +458,9 @@ ChartPreview.propTypes = {
   onChange: PropTypes.func.isRequired,
   onRefreshData: PropTypes.func.isRequired,
   onRefreshPreview: PropTypes.func.isRequired,
+  datasets: PropTypes.array.isRequired,
+  invalidateCache: PropTypes.bool.isRequired,
+  changeCache: PropTypes.func.isRequired,
 };
 
 const mapStateToProps = (state) => {

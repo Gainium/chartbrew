@@ -1,11 +1,15 @@
 /* eslint-disable react/jsx-props-no-spreading */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { usePagination, useSortBy, useTable } from "react-table";
 import PropTypes from "prop-types";
 import {
-  Button, Dropdown, Form, Icon, Input, Label, Popup, Table
-} from "semantic-ui-react";
+  Dropdown, Row, Spacer, Text, Link as LinkNext, Table,
+  Popover, Pagination, Badge,
+} from "@nextui-org/react";
+import {
+  ChevronDownCircle, ChevronUpCircle
+} from "react-iconly";
 
 const paginationOptions = [5, 10, 20, 30, 40, 50].map((pageSize) => ({
   key: pageSize,
@@ -15,8 +19,10 @@ const paginationOptions = [5, 10, 20, 30, 40, 50].map((pageSize) => ({
 
 function TableComponent(props) {
   const {
-    columns, data, height, embedded
+    columns, data, height, embedded, dataset,
   } = props;
+
+  const [totalValue, setTotalValue] = useState(0);
 
   const {
     getTableProps,
@@ -24,15 +30,10 @@ function TableComponent(props) {
     headerGroups,
     page,
     prepareRow,
-    canPreviousPage,
-    canNextPage,
-    pageOptions,
     pageCount,
     gotoPage,
-    nextPage,
-    previousPage,
     setPageSize,
-    state: { pageIndex, pageSize },
+    state: { pageSize },
   } = useTable({
     columns,
     data,
@@ -41,139 +42,178 @@ function TableComponent(props) {
   useSortBy,
   usePagination);
 
-  const getColumnsRealSize = () => {
-    let realSize = 0;
-    columns.forEach((column) => {
-      realSize++;
-      if (column.columns) realSize += column.columns.length;
-    });
-
-    return realSize;
-  };
+  useEffect(() => {
+    if (data && dataset?.configuration?.sum) {
+      setTotalValue(0);
+      data.forEach((d) => {
+        if (d[dataset.configuration.sum]) {
+          try {
+            setTotalValue((prev) => prev + parseFloat(d[dataset.configuration.sum]));
+          } catch (e) {
+            // console.log("e", e);
+          }
+        }
+      });
+    }
+  }, [dataset]);
 
   return (
     <div style={styles.mainBody(height, embedded)}>
-      <Table sortable celled striped unstackable fixed {...getTableProps()} style={styles.table}>
-        <Table.Header>
-          {headerGroups.map(headerGroup => (
-            <Table.Row {...headerGroup.getHeaderGroupProps()}>
-              {headerGroup.headers.map(column => (
-                <Table.HeaderCell
-                  {...column.getHeaderProps(column.getSortByToggleProps())}
-                  style={{ maxWidth: 400, whiteSpace: "unset" }}
-                >
-                  {typeof column.render("Header") === "object"
-                    ? column.render("Header") : column.render("Header").replace("__cb_group", "")}
-                  <span>
-                    {" "}
-                    {column.isSorted
-                      ? column.isSortedDesc
-                        ? (<Icon name="chevron down" />)
-                        : (<Icon name="chevron up" />)
-                      : ""}
-                  </span>
-                </Table.HeaderCell>
-              ))}
-            </Table.Row>
-          ))}
-        </Table.Header>
-        <Table.Body {...getTableBodyProps()}>
-          {page.length < 1 && (
-            <Table.Row>
-              <Table.Cell>No Results</Table.Cell>
-            </Table.Row>
+      {(!headerGroups
+        || !headerGroups[headerGroups.length - 1]
+        || !headerGroups[headerGroups.length - 1].headers
+      ) && (
+        <Text i>No results in this table</Text>
+      )}
+
+      {headerGroups
+        && headerGroups[headerGroups.length - 1]
+        && headerGroups[headerGroups.length - 1].headers
+        && (
+        <>
+          <Table
+            {...getTableProps()}
+            shadow={false}
+            lined
+          >
+            <Table.Header>
+              {headerGroups[headerGroups.length - 1].headers.map((column) => {
+                return (
+                  <Table.Column
+                    key={column.getHeaderProps(column.getSortByToggleProps()).key}
+                    style={{ maxWidth: 400, whiteSpace: "unset" }}
+                    justify="center"
+                    css={{ pl: 10, pr: 10 }}
+                  >
+                    <Row align="center">
+                      {column.isSorted
+                        ? column.isSortedDesc
+                          ? (<ChevronDownCircle />)
+                          : (<ChevronUpCircle />)
+                        : ""}
+                      <LinkNext
+                        onClick={column.getHeaderProps(column.getSortByToggleProps()).onClick}
+                      >
+                        <Text>
+                          {typeof column.render("Header") === "object"
+                            ? column.render("Header") : column.render("Header").replace("__cb_group", "")}
+                        </Text>
+                      </LinkNext>
+                    </Row>
+                  </Table.Column>
+                );
+              })}
+            </Table.Header>
+            <Table.Body {...getTableBodyProps()}>
+              {page.length < 1 && (
+                <Table.Row>
+                  <Table.Cell key="noresult">No Results</Table.Cell>
+                </Table.Row>
+              )}
+              {page.map((row) => {
+                prepareRow(row);
+                return (
+                  <Table.Row {...row.getRowProps()}>
+                    {row.cells.map((cell) => {
+                      // identify collections to render them differently
+                      const cellObj = cell.render("Cell");
+                      // console.log("cellObj.key", cellObj.props.column.Header);
+
+                      const isObject = (cellObj.props.value && cellObj.props.value.indexOf && cellObj.props.value.indexOf("__cb_object") > -1) || false;
+                      const isArray = (cellObj.props.value && cellObj.props.value.indexOf && cellObj.props.value.indexOf("__cb_array") > -1) || false;
+                      const objDetails = (isObject || isArray)
+                        && JSON.parse(cellObj.props.value.replace("__cb_object", "").replace("__cb_array", ""));
+
+                      // this is to check if the object has only one key
+                      // to display the value directly
+                      const isShort = isObject && Object.keys(objDetails).length === 1;
+
+                      return (
+                        <Table.Cell
+                          {...cell.getCellProps()}
+                          css={{
+                            userSelect: "text",
+                            maxWidth: 300,
+                            pr: 10,
+                            pl: 10,
+                            borderBottom: "$accents3 solid 1px",
+                            borderRight: "$accents3 solid 1px",
+                          }}
+                        >
+                          {(!isObject && !isArray) && (
+                            <Text size={"0.9em"} title={cellObj.props.value} css={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                              <span
+                                style={{ cursor: "text", WebkitUserSelect: "text", whiteSpace: "nowrap" }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                role="presentation"
+                              >
+                                {cellObj.props.value === true || cellObj.props.value === false
+                                  ? `${cellObj.props.value}` : cellObj}
+                              </span>
+                            </Text>
+                          )}
+                          {(isObject || isArray) && (
+                            <Popover>
+                              <Popover.Trigger>
+                                <LinkNext><Badge color="primary" variant={"flat"}>{(isShort && `${Object.values(objDetails)[0]}`) || "Collection"}</Badge></LinkNext>
+                              </Popover.Trigger>
+                              <Popover.Content>
+                                <pre><code>{JSON.stringify(objDetails, null, 4)}</code></pre>
+                              </Popover.Content>
+                            </Popover>
+                          )}
+                        </Table.Cell>
+                      );
+                    })}
+                  </Table.Row>
+                );
+              })}
+            </Table.Body>
+          </Table>
+          {dataset?.configuration?.sum && (
+            <div>
+              <Row justify="flex-end" align="center" css={{ pl: 20, pr: 20 }}>
+                <Text>{`Total ${dataset.configuration.sum}:`}</Text>
+                <Spacer x={0.3} />
+                <Text b>{totalValue.toLocaleString()}</Text>
+              </Row>
+              <Spacer y={0.5} />
+            </div>
           )}
-          {page.map((row) => {
-            prepareRow(row);
-            return (
-              <Table.Row {...row.getRowProps()}>
-                {row.cells.map((cell) => {
-                  // identify collections to render them differently
-                  const cellObj = cell.render("Cell");
-
-                  const isObject = (cellObj.props.value && cellObj.props.value.indexOf && cellObj.props.value.indexOf("__cb_object") > -1) || false;
-                  const isArray = (cellObj.props.value && cellObj.props.value.indexOf && cellObj.props.value.indexOf("__cb_array") > -1) || false;
-                  const objDetails = (isObject || isArray)
-                    && JSON.parse(cellObj.props.value.replace("__cb_object", "").replace("__cb_array", ""));
-
-                  // this is to check if the object has only one key to display the value directly
-                  const isShort = isObject && Object.keys(objDetails).length === 1;
-
-                  return (
-                    <Table.Cell collapsing {...cell.getCellProps()} style={{ maxWidth: 300 }}>
-                      {(!isObject && !isArray) && (
-                        <span title={cellObj.props.value}>
-                          {cellObj.props.value === true || cellObj.props.value === false
-                            ? `${cellObj.props.value}` : cellObj}
-                        </span>
-                      )}
-                      {(isObject || isArray) && (
-                        <Popup
-                          trigger={(<Label as="a">{(isShort && `${Object.values(objDetails)[0]}`) || "Collection"}</Label>)}
-                          content={(<pre><code>{JSON.stringify(objDetails, null, 4)}</code></pre>)}
-                          on="click"
-                        />
-                      )}
-                    </Table.Cell>
-                  );
-                })}
-              </Table.Row>
-            );
-          })}
-        </Table.Body>
-        <Table.Footer className="pagination">
-          <Table.Row>
-            <Table.HeaderCell colSpan={getColumnsRealSize()} style={{ overflow: "visible" }}>
-              <Form size="small">
-                <Form.Group style={{ marginBottom: 0 }}>
-                  <Form.Field>
-                    <Button icon="angle double left" onClick={() => gotoPage(0)} disabled={!canPreviousPage} />
-                    <Button icon="angle left" onClick={() => previousPage()} disabled={!canPreviousPage} />
-                    <Button icon="angle right" onClick={() => nextPage()} disabled={!canNextPage} />
-                    <Button icon="angle double right" onClick={() => gotoPage(pageCount - 1)} disabled={!canNextPage} />
-                  </Form.Field>
-                  <Form.Field>
-                    <span>
-                      {"Page "}
-                      <strong>
-                        {pageIndex + 1}
-                        {" of "}
-                        {pageOptions.length}
-                      </strong>
-                    </span>
-                    <span>
-                      {" "}
-                      <Input
-                        type="number"
-                        defaultValue={pageIndex + 1}
-                        onChange={e => {
-                          const page = e.target.value ? Number(e.target.value) - 1 : 0;
-                          gotoPage(page);
-                        }}
-                        style={{ width: 70 }}
-                      />
-                    </span>
-                    {" "}
-                  </Form.Field>
-                  <Form.Field>
-                    <Dropdown
-                      value={pageSize}
-                      onChange={(e, data) => {
-                        setPageSize(Number(data.value));
-                      }}
-                      options={paginationOptions}
-                      selection
-                      compact
-                      upward
-                      style={styles.itemsDropdown}
-                    />
-                  </Form.Field>
-                </Form.Group>
-              </Form>
-            </Table.HeaderCell>
-          </Table.Row>
-        </Table.Footer>
-      </Table>
+          <div>
+            <Row align="center">
+              <Pagination
+                total={pageCount}
+                initialPage={1}
+                onChange={(page) => {
+                  gotoPage(page - 1);
+                }}
+                size="sm"
+              />
+              <Spacer x={0.5} />
+              <Dropdown>
+                <Dropdown.Button bordered size="sm">
+                  {paginationOptions.find((option) => option.value === pageSize).text}
+                </Dropdown.Button>
+                <Dropdown.Menu
+                  selectionMode="single"
+                  selectedKeys={[`${pageSize}`]}
+                  onSelectionChange={(selection) => {
+                    setPageSize(Number(Object.values(selection)[0]));
+                  }}
+                >
+                  {paginationOptions.map((option) => (
+                    <Dropdown.Item key={`${option.value}`}>
+                      <Text css={{ color: "$text" }}>{option.text}</Text>
+                    </Dropdown.Item>
+                  ))}
+                </Dropdown.Menu>
+              </Dropdown>
+            </Row>
+          </div>
+        </>
+        )}
     </div>
   );
 }
@@ -204,6 +244,7 @@ TableComponent.propTypes = {
   data: PropTypes.array.isRequired,
   height: PropTypes.number,
   embedded: PropTypes.bool,
+  dataset: PropTypes.object.isRequired,
 };
 
 export default TableComponent;

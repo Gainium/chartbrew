@@ -1,7 +1,8 @@
 import React, { useLayoutEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { Label } from "semantic-ui-react";
 import { useDrag, useDrop } from "react-dnd";
+import { Spacer, Badge } from "@nextui-org/react";
+import { MdOutlineDragIndicator } from "react-icons/md";
 
 function DraggableLabel({ field, index, onMove }) {
   const ref = useRef(null);
@@ -74,28 +75,17 @@ function DraggableLabel({ field, index, onMove }) {
   }, [drag, drop, ref]);
 
   return (
-    <div ref={ref} style={{ display: "inline-block", paddingLeft: 5 }} data-handler-id={handlerId}>
-      <Label
-        color="olive"
-        as="a"
-        style={{ ...styles.fieldLabels }}
-        title={field.Header.replace("?", ".")}
+    <div ref={ref} style={{ display: "inline-block" }} data-handler-id={handlerId}>
+      <Badge
+        color="secondary"
       >
+        <MdOutlineDragIndicator size={20} />
+        <Spacer x={0.2} />
         {`${field.Header.replace("?", ".")}  `}
-      </Label>
+      </Badge>
     </div>
   );
 }
-
-const styles = {
-  fieldLabels: {
-    cursor: "move",
-    maxWidth: 150,
-    whiteSpace: "nowrap",
-    textOverflow: "ellipsis",
-    overflow: "hidden",
-  },
-};
 
 DraggableLabel.propTypes = {
   field: PropTypes.object.isRequired,

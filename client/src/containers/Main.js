@@ -2,8 +2,9 @@ import React, { useEffect, lazy, Suspense } from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
 import { Route, Switch, withRouter } from "react-router";
-import { Grid, Container } from "semantic-ui-react";
+import { Container, useTheme } from "@nextui-org/react";
 import { createMedia } from "@artsy/fresnel";
+import { Helmet } from "react-helmet";
 
 import SuspenseLoader from "../components/SuspenseLoader";
 import UserDashboard from "./UserDashboard";
@@ -14,7 +15,6 @@ import { cleanErrors as cleanErrorsAction } from "../actions/error";
 
 const ProjectBoard = lazy(() => import("./ProjectBoard/ProjectBoard"));
 const Signup = lazy(() => import("./Signup"));
-const VerifyUser = lazy(() => import("./VerifyUser"));
 const Login = lazy(() => import("./Login"));
 const ManageTeam = lazy(() => import("./ManageTeam"));
 const UserInvite = lazy(() => import("./UserInvite"));
@@ -44,6 +44,8 @@ function Main(props) {
     relog, getUser, getTeams, location, cleanErrors, history,
   } = props;
 
+  const { isDark, theme } = useTheme();
+
   useEffect(() => {
     cleanErrors();
     if (!location.pathname.match(/\/chart\/\d+\/embedded/g)) {
@@ -61,6 +63,41 @@ function Main(props) {
 
   return (
     <div style={styles.container}>
+      <Helmet>
+        {isDark && (
+          <style type="text/css">
+            {`
+              .rdrDateRangePickerWrapper, .rdrDefinedRangesWrapper, .rdrStaticRanges .rdrStaticRange,
+              .rdrDateDisplayWrapper, .rdrMonthAndYearWrapper, .rdrMonths, .rdrDefinedRangesWrapper
+              {
+                background-color: ${theme.colors.backgroundContrast.value};
+                background: ${theme.colors.backgroundContrast.value};
+              }
+
+              .rdrStaticRange:hover, .rdrStaticRangeLabel:hover {
+                background: ${theme.colors.background.value};
+              }
+
+              .rdrInputRange span {
+                color: ${theme.colors.text.value};
+              }
+
+              .rdrDay span {
+                color: ${theme.colors.text.value};
+              }
+
+              .rdrMonthPicker select, .rdrYearPicker select {
+                color: ${theme.colors.text.value};
+              }
+
+              .rdrDateInput, .rdrInputRangeInput {
+                background-color: ${theme.colors.accents0.value};
+                color: ${theme.colors.text.value};
+              }
+            `}
+          </style>
+        )}
+      </Helmet>
       <style>{mediaStyles}</style>
       <MediaContextProvider>
         <div>
@@ -72,17 +109,14 @@ function Main(props) {
                 exact
                 path="/feedback"
                 render={() => (
-                  <Grid centered padded>
-                    <Container textAlign="left" text>
-                      <FeedbackForm />
-                    </Container>
-                  </Grid>
+                  <Container justify="center" css={{ pt: 100, pb: 50 }} sm>
+                    <FeedbackForm />
+                  </Container>
                 )}
               />
               <Route exact path="/manage/:teamId" component={ManageTeam} />
               <Route exact path="/:teamId/:projectId" component={ProjectBoard} />
               <Route exact path="/signup" component={Signup} />
-              <Route exact path="/verify" component={VerifyUser} />
               <Route exact path="/google-auth" component={GoogleAuth} />
               <Route exact path="/login" component={Login} />
               <Route exact path="/user" component={UserDashboard} />

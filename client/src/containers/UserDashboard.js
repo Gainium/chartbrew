@@ -2,15 +2,17 @@ import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
 import { Link } from "react-router-dom";
-import {
-  Divider, Dimmer, Loader, Form, Modal, Header, Message, Container,
-  Button, Icon, Grid, Card, Step, TransitionablePortal,
-} from "semantic-ui-react";
 import { useWindowSize } from "react-use";
+import {
+  Button, Col, Container, Input, Loading, Row,
+  Spacer, Table, Text, Tooltip, Link as LinkNext, Badge, Modal,
+} from "@nextui-org/react";
+import {
+  Chart, Delete, Edit, People, Plus, Search, Setting, Swap, User
+} from "react-iconly";
 
 import {
   getTeams as getTeamsAction,
-  createTeam as createTeamAction,
   saveActiveTeam as saveActiveTeamAction,
 } from "../actions/team";
 import { getUser, relog as relogAction } from "../actions/user";
@@ -18,29 +20,32 @@ import { cleanErrors as cleanErrorsAction } from "../actions/error";
 import {
   getTemplates as getTemplatesAction
 } from "../actions/template";
+import {
+  updateProject as updateProjectAction,
+  removeProject as removeProjectAction,
+} from "../actions/project";
 import ProjectForm from "../components/ProjectForm";
-import InviteMembersForm from "../components/InviteMembersForm";
-import Invites from "../components/Invites";
 import Navbar from "../components/Navbar";
 import canAccess from "../config/canAccess";
+import { secondary } from "../config/colors";
 
 /*
   The user dashboard with all the teams and projects
 */
 function UserDashboard(props) {
   const {
-    relog, cleanErrors, user, getTeams, createTeam, saveActiveTeam,
-    teams, teamLoading, getTemplates, history,
+    relog, cleanErrors, user, getTeams, saveActiveTeam,
+    teams, teamLoading, getTemplates, history, updateProject, removeProject,
   } = props;
 
   const [loading, setLoading] = useState(false);
-  const [createTeamModal, setCreateTeamModal] = useState(false);
-  const [addMembersModal, setAddMembersModal] = useState(false);
-  const [submitError, setSubmitError] = useState(false);
-  const [name, setName] = useState("");
   const [addProject, setAddProject] = useState(false);
   const [fetched, setFetched] = useState(false);
   const [retried, setRetried] = useState(false);
+  const [search, setSearch] = useState({});
+  const [projectToEdit, setProjectToEdit] = useState(null);
+  const [projectToDelete, setProjectToDelete] = useState(null);
+  const [modifyingProject, setModifyingProject] = useState(false);
 
   const { width, height } = useWindowSize();
 
@@ -76,7 +81,7 @@ function UserDashboard(props) {
   const _getTeams = () => {
     setFetched(true);
     setLoading(true);
-    getTeams(user.data.id)
+    return getTeams(user.data.id)
       .then(() => {
         setLoading(false);
       })
@@ -86,24 +91,6 @@ function UserDashboard(props) {
         }
         setLoading(false);
         setRetried(true);
-      });
-  };
-
-  const handleChange = (e, { value }) => setName(value);
-
-  const _createTeam = () => {
-    setLoading(true);
-    createTeam(user.data.id, name)
-      .then((newTeam) => {
-        // set team to saveActiveTeam
-        saveActiveTeam(newTeam);
-        setLoading(false);
-        setCreateTeamModal(false);
-        setAddMembersModal(true);
-        setName("");
-      }).catch(() => {
-        setSubmitError(true);
-        setLoading(false);
       });
   };
 
@@ -135,107 +122,73 @@ function UserDashboard(props) {
     return teamRoles.filter((o) => o.user_id === user.data.id)[0].role;
   };
 
-  /* Modal to invite team members  */
-  const invitationModal = () => {
-    return (
-      <Modal
-        open={addMembersModal}
-        onClose={() => setAddMembersModal(false)}
-        size="small"
-        closeIcon
-      >
-        <InviteMembersForm
-          skipTeamInvite={() => setAddMembersModal(false)}
-        />
-      </Modal>
-    );
+  const _getFilteredProjects = (team) => {
+    if (!search[team.id]) return team.Projects;
+    return team.Projects.filter((p) => {
+      return p.name.toLowerCase().indexOf(search[team.id].toLowerCase()) > -1;
+    });
   };
 
-  /* Modal to create new team  */
-  const newTeamModal = () => {
-    return (
-      <Modal
-        open={createTeamModal}
-        onClose={() => setCreateTeamModal(false)}
-        size="mini"
-        closeIcon
-      >
-        <Modal.Header> Create a new Team </Modal.Header>
-        <Modal.Content>
-          <Form onSubmit={_createTeam}>
-            <Form.Input label="Team name *" placeholder="Enter a name for your team" name="name" value={name} onChange={handleChange} />
-            <Divider />
-            {submitError
-            && (
-            <Container textAlign="center" style={{ margin: "1em" }}>
-              <Message negative> There was an error creating a new team. </Message>
-            </Container>
-            )}
-            <Form.Button loading={loading} disabled={!name} type="submit" floated="right" compact size="large" primary icon labelPosition="right">
-              {" "}
-              Submit
-              <Icon name="arrow right" />
-              {" "}
-            </Form.Button>
-          </Form>
-        </Modal.Content>
-        <Divider hidden />
-      </Modal>
-    );
+  const _onEditProject = (project) => {
+    setProjectToEdit(project);
+  };
+
+  const _onEditProjectSubmit = () => {
+    if (projectToEdit && projectToEdit.id) {
+      setModifyingProject(true);
+      updateProject(projectToEdit.id, { name: projectToEdit.name })
+        .then(() => {
+          return _getTeams();
+        })
+        .then(() => {
+          setModifyingProject(false);
+          setProjectToEdit(null);
+        })
+        .catch(() => {
+          setModifyingProject(false);
+        });
+    }
+  };
+
+  const _onDeleteProject = (project) => {
+    setProjectToDelete(project);
+  };
+
+  const _onDeleteProjectSubmit = () => {
+    if (projectToDelete && projectToDelete.id) {
+      setModifyingProject(true);
+      removeProject(projectToDelete.id)
+        .then(() => {
+          return _getTeams();
+        })
+        .then(() => {
+          setProjectToDelete(null);
+          setModifyingProject(false);
+        })
+        .catch(() => {
+          setModifyingProject(false);
+        });
+    }
   };
 
   const newProjectModal = () => {
     return (
-      <TransitionablePortal open={addProject}>
-        <Modal
-          open={addProject}
-          onClose={() => setAddProject(false)}
-          size="large"
-          closeIcon
-        >
-          <Modal.Content>
-            {teams[0] && teams[0].Projects && teams[0].Projects.length === 0 && (
-              <div>
-                <Step.Group fluid>
-                  <Step active>
-                    <Icon name="hand point down outline" />
-                    <Step.Content>
-                      <Step.Title>Project</Step.Title>
-                      <Step.Description>Create your first project</Step.Description>
-                    </Step.Content>
-                  </Step>
-                  <Step disabled>
-                    <Step.Content>
-                      <Step.Title>Connect</Step.Title>
-                      <Step.Description>Connect to your data source</Step.Description>
-                    </Step.Content>
-                  </Step>
-                  <Step disabled>
-                    <Step.Content>
-                      <Step.Title>Visualize</Step.Title>
-                      <Step.Description>Create your first chart</Step.Description>
-                    </Step.Content>
-                  </Step>
-                </Step.Group>
-                <Header as="h2">{"Let's get you started"}</Header>
-                <p>{"In Chartbrew you can have multiple projects and each one has a different dashboard and data source connections."}</p>
-                <p>{"To get started, name your first project below and then we'll move on to setting up your first data source connection."}</p>
-                <Divider hidden />
-              </div>
-            )}
-            <ProjectForm onComplete={_onProjectCreated} />
-          </Modal.Content>
-        </Modal>
-      </TransitionablePortal>
+      <ProjectForm
+        onComplete={_onProjectCreated}
+        open={addProject}
+        onClose={() => setAddProject(false)}
+      />
     );
   };
 
   if (!user.data.id) {
     return (
       <div style={styles.container(height)}>
-        <Dimmer active={loading}>
-          <Loader />
-        </Dimmer>
+        <Container sm>
+          <Row justify="center" align="center">
+            <Loading size="xl" />
+          </Row>
+        </Container>
       </div>
     );
   }
@@ -243,126 +196,274 @@ function UserDashboard(props) {
   return (
     <div style={styles.container(height)}>
       <Navbar hideTeam transparent />
-      <Container textAlign="center" style={styles.mainContent}>
-        <Divider hidden />
-        {loading && <Loader inverted active={loading} />}
-
-        <Invites />
-        {newTeamModal()}
-        {invitationModal()}
+      <Container style={styles.mainContent}>
+        <Spacer y={1} />
         {newProjectModal()}
-
-        {teams && teams.length === 0 && !teamLoading && (
-          <Header as="h1" inverted style={{ marginTop: 100 }}>
-            You are not part of any team yet
-            <Header.Subheader>
-              You can join a team when you receive and accept an invitation
-            </Header.Subheader>
-          </Header>
-        )}
 
         {teams && teams.map((key) => {
           return (
-            <Container
-              textAlign="left"
-              key={key.id}
-              style={styles.teamContainer}
-            >
-              <Header
-                textAlign="left"
-                as="h2"
-                inverted
-                style={styles.teamHeader}
-                title={`${key.TeamRoles.length} member${key.TeamRoles.length > 1 ? "s" : ""}`}
+            <>
+              <Container
+                justify="space-between"
+                key={key.id}
+                fluid
+                display="flex"
+                wrap="nowrap"
+                alignItems="center"
+                css={{ pl: 0, pr: 0 }}
               >
-                <Icon name={key.TeamRoles.length > 1 ? "users" : "user"} size="small" />
-                <span>{" "}</span>
-                <Header.Content>{key.name}</Header.Content>
-              </Header>
-              {_canAccess("admin", key.TeamRoles)
-                && (
-                <Button
-                  style={width >= 768 ? styles.settingsBtn : {}}
-                  size="small"
-                  basic
-                  inverted
-                  icon
-                  floated={width >= 768 ? "right" : false}
-                  labelPosition="right"
-                  as={Link}
-                  to={`/manage/${key.id}/settings`}
-                >
-                  <Icon name="settings" />
-                  Team settings
-                </Button>
-                )}
-              {key.TeamRoles[0] && (
-                <span>
-                  <Header style={styles.listRole} content={_getTeamRole(key.TeamRoles)} />
-                </span>
-              )}
-
-              <Card.Group itemsPerRow={4} style={styles.cardsContainer} stackable>
-                {key.Projects && key.Projects.map((project) => {
-                  return (
-                    <Card
-                      style={styles.projectContainer}
-                      key={project.id}
-                      onClick={() => directToProject(key, project.id)}
-                      className="project-segment"
+                <Col>
+                  <Row justify="flex-start" align="center">
+                    {key.TeamRoles.length > 1 && <People />}
+                    {key.TeamRoles.length < 2 && <User />}
+                    <Spacer x={0.2} />
+                    <Text
+                      size={24}
+                      b
+                      style={styles.teamHeader}
+                      title={`${key.TeamRoles.length} member${key.TeamRoles.length > 1 ? "s" : ""}`}
                     >
-                      <Card.Header textAlign="center" as="h3" style={styles.cardHeader}>
-                        {project.name}
-                      </Card.Header>
-                      <Card.Content>
-                        <Grid columns={2} centered>
-                          <Grid.Column textAlign="center" style={styles.iconColumn}>
-                            <Container textAlign="center" title="Number of connections">
-                              <Icon name="plug" size="large" />
-                              <span>{project.Connections && project.Connections.length}</span>
-                            </Container>
-                          </Grid.Column>
-                          <Grid.Column textAlign="center" style={styles.iconColumn}>
-                            <Container textAlign="center" title="Number of charts">
-                              <Icon name="chart line" size="large" />
-                              <span>{project.Charts.length}</span>
-                            </Container>
-                          </Grid.Column>
-                        </Grid>
-                      </Card.Content>
-                    </Card>
-                  );
-                })}
+                      {key.name}
+                    </Text>
+                    <Spacer x={0.5} />
+                    {key.TeamRoles[0] && (
+                      <Badge color="secondary">
+                        {_getTeamRole(key.TeamRoles)}
+                      </Badge>
+                    )}
+                  </Row>
+                </Col>
                 {_canAccess("admin", key.TeamRoles)
                   && (
-                    <Card
-                      style={{ ...styles.projectContainer, ...styles.addProjectCard }}
-                      onClick={() => _onNewProject(key)}
-                      className="project-segment"
-                    >
-                      <Card.Header textAlign="center" as="h3" style={styles.cardHeader}>
-                        Create a new project
-                      </Card.Header>
-                      <Card.Content>
-                        <Header textAlign="center" as="h2">
-                          <Icon name="plus" size="large" color="orange" />
-                        </Header>
-                      </Card.Content>
-                    </Card>
+                    <Col>
+                      <Row justify="flex-end" align="center">
+                        <Tooltip content="Team settings">
+                          <Link to={`/manage/${key.id}/settings`}>
+                            <Button
+                              style={width >= 768 ? styles.settingsBtn : {}}
+                              ghost
+                              icon={<Setting />}
+                              css={{ minWidth: "fit-content" }}
+                              size="sm"
+                            />
+                          </Link>
+                        </Tooltip>
+                      </Row>
+                    </Col>
                   )}
-
-              </Card.Group>
-              {key.Projects && key.Projects.length === 0 && !_canAccess("admin", key.TeamRoles)
-                && (
-                  <Message>
-                    <p>
-                      {"No project over here"}
-                    </p>
-                  </Message>
+              </Container>
+              <Container css={{ pl: 0, pr: 0 }}>
+                <Spacer y={1} />
+                <Row justify="flex-start" align="center" wrap="wrap">
+                  {_canAccess("admin", key.TeamRoles) && (
+                    <>
+                      <Button
+                        onClick={() => _onNewProject(key)}
+                        iconRight={<Plus />}
+                        auto
+                        css={{ mb: 10 }}
+                      >
+                        Create new project
+                      </Button>
+                      <Spacer x={0.5} />
+                    </>
+                  )}
+                  <Input
+                    type="text"
+                    placeholder="Search projects"
+                    clearable
+                    bordered
+                    contentRight={<Search set="light" />}
+                    onChange={(e) => setSearch({ ...search, [key.id]: e.target.value })}
+                    css={{ mb: 10 }}
+                  />
+                </Row>
+                <Spacer y={0.5} />
+                {key.Projects && (
+                  <Table
+                    aria-label="Projects list"
+                    css={{
+                      height: "auto",
+                      minWidth: "100%",
+                      backgroundColor: "$backgroundContrast"
+                    }}
+                    sticked
+                    striped
+                    headerLined
+                  >
+                    <Table.Header>
+                      <Table.Column key="name">Project name</Table.Column>
+                      <Table.Column key="connections" align="center">
+                        <Row align="center" justify="center">
+                          <Swap size="small" />
+                          <Spacer x={0.2} />
+                          Connections
+                        </Row>
+                      </Table.Column>
+                      <Table.Column key="charts" align="center">
+                        <Row align="center" justify="center">
+                          <Chart size="small" />
+                          <Spacer x={0.2} />
+                          Charts
+                        </Row>
+                      </Table.Column>
+                      <Table.Column key="actions" align="center" hideHeader>Actions</Table.Column>
+                    </Table.Header>
+                    {_getFilteredProjects(key).length > 0 && (
+                      <Table.Body items={_getFilteredProjects(key)}>
+                        {(project) => (
+                          <Table.Row key={project.id}>
+                            <Table.Cell key="name">
+                              <LinkNext onClick={() => directToProject(key, project.id)}>
+                                <Text b css={{ color: "$text" }}>{project.name}</Text>
+                              </LinkNext>
+                            </Table.Cell>
+                            <Table.Cell key="connections">
+                              <Row justify="center" align="center">
+                                <Text b>
+                                  {project.Connections && project.Connections.length}
+                                </Text>
+                              </Row>
+                            </Table.Cell>
+                            <Table.Cell key="charts">
+                              <Row justify="center" align="center">
+                                <Text b>
+                                  {project.Charts.length}
+                                </Text>
+                              </Row>
+                            </Table.Cell>
+                            <Table.Cell key="actions">
+                              {_canAccess("admin", key.TeamRoles) && (
+                                <Row justify="flex-end" align="center">
+                                  <Tooltip content="Rename the project">
+                                    <Button
+                                      icon={<Edit set="light" />}
+                                      light
+                                      size="sm"
+                                      css={{ minWidth: "fit-content" }}
+                                      onClick={() => _onEditProject(project)}
+                                    />
+                                  </Tooltip>
+                                  <Tooltip
+                                    content="Delete project"
+                                    color="error"
+                                  >
+                                    <Button
+                                      color="error"
+                                      icon={<Delete set="light" />}
+                                      light
+                                      size="sm"
+                                      css={{ minWidth: "fit-content" }}
+                                      onClick={() => _onDeleteProject(project)}
+                                    />
+                                  </Tooltip>
+                                  <Spacer x={0.5} />
+                                </Row>
+                              )}
+                            </Table.Cell>
+                          </Table.Row>
+                        )}
+                      </Table.Body>
+                    )}
+                    {_getFilteredProjects(key).length === 0 && (
+                      <Table.Body>
+                        <Table.Row>
+                          <Table.Cell key="name">
+                            <Text i>No projects found</Text>
+                          </Table.Cell>
+                          <Table.Cell key="connections" align="center" />
+                          <Table.Cell key="charts" align="center" />
+                          <Table.Cell key="actions" align="center" />
+                        </Table.Row>
+                      </Table.Body>
+                    )}
+                  </Table>
                 )}
-            </Container>
+                {key.Projects && key.Projects.length === 0 && !_canAccess("admin", key.TeamRoles)
+                  && (
+                    <Container>
+                      <Text h3>
+                        {"No project over here"}
+                      </Text>
+                    </Container>
+                  )}
+              </Container>
+              <Spacer y={3} />
+
+              <Modal open={!!projectToEdit} onClose={() => setProjectToEdit(null)}>
+                <Modal.Header>
+                  <Text h3>Rename your project</Text>
+                </Modal.Header>
+                <Modal.Body>
+                  <Input
+                    label="Project name"
+                    placeholder="Enter the project name"
+                    value={projectToEdit?.name || ""}
+                    onChange={(e) => setProjectToEdit({ ...projectToEdit, name: e.target.value })}
+                    bordered
+                    fullWidth
+                  />
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button
+                    flat
+                    color="warning"
+                    onClick={() => setProjectToEdit(null)}
+                    auto
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    auto
+                    onClick={() => _onEditProjectSubmit()}
+                    disabled={!projectToEdit?.name || modifyingProject}
+                    iconRight={modifyingProject ? <Loading size="xs" /> : null}
+                  >
+                    Save
+                  </Button>
+                </Modal.Footer>
+              </Modal>
+
+              <Modal open={!!projectToDelete} onClose={() => setProjectToDelete(null)}>
+                <Modal.Header>
+                  <Text h4>Are you sure you want to delete the project?</Text>
+                </Modal.Header>
+                <Modal.Body>
+                  <Text>
+                    {"Deleting a project will delete all the charts and connections associated with it. This action cannot be undone."}
+                  </Text>
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button
+                    flat
+                    color="warning"
+                    onClick={() => setProjectToDelete(null)}
+                    auto
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    auto
+                    color="error"
+                    iconRight={modifyingProject ? <Loading size="xs" /> : <Delete />}
+                    onClick={() => _onDeleteProjectSubmit()}
+                    disabled={modifyingProject}
+                  >
+                    Delete
+                  </Button>
+                </Modal.Footer>
+              </Modal>
+            </>
           );
         })}
+
+        {(loading || teamLoading || (teams && teams.length === 0)) && (
+          <Row justify="center" align="center">
+            <Loading type="points" size="lg">
+              Loading your team
+            </Loading>
+          </Row>
+        )}
       </Container>
     </div>
   );
@@ -371,7 +472,7 @@ function UserDashboard(props) {
 const styles = {
   container: (height) => ({
     flex: 1,
-    backgroundColor: "#103751",
+    // backgroundColor: "#103751",
     minHeight: height,
   }),
   listContent: {
@@ -387,13 +488,7 @@ const styles = {
   card: {
     backgroundColor: "white",
   },
-  blueSection: {
-    backgroundColor: "#103751",
-    borderColor: "#103751",
-  },
   mainContent: {
-    backgroundColor: "#103751",
-    borderColor: "#103751",
     paddingTop: 50,
     paddingBottom: 50,
   },
@@ -423,10 +518,18 @@ const styles = {
     marginLeft: 20,
   },
   addProjectCard: {
-    opacity: 0.7,
+    opacity: 0.5,
+    display: "flex",
+    width: "100%"
   },
   iconColumn: {
     color: "black",
+  },
+  roleBanner: {
+    backgroundColor: secondary,
+    paddingRight: 8,
+    paddingLeft: 8,
+    borderRadius: 10,
   },
 };
 
@@ -434,13 +537,14 @@ UserDashboard.propTypes = {
   user: PropTypes.object.isRequired,
   teams: PropTypes.array.isRequired,
   getTeams: PropTypes.func.isRequired,
-  createTeam: PropTypes.func.isRequired,
   saveActiveTeam: PropTypes.func.isRequired,
   relog: PropTypes.func.isRequired,
   cleanErrors: PropTypes.func.isRequired,
   teamLoading: PropTypes.bool.isRequired,
   getTemplates: PropTypes.func.isRequired,
   history: PropTypes.object.isRequired,
+  updateProject: PropTypes.func.isRequired,
+  removeProject: PropTypes.func.isRequired,
 };
 
 const mapStateToProps = (state) => {
@@ -455,11 +559,12 @@ const mapDispatchToProps = (dispatch) => {
   return {
     getUser: (id) => dispatch(getUser(id)),
     getTeams: (userId) => dispatch(getTeamsAction(userId)),
-    createTeam: (userId, name) => dispatch(createTeamAction(userId, name)),
     saveActiveTeam: (team) => dispatch(saveActiveTeamAction(team)),
     relog: () => dispatch(relogAction()),
     cleanErrors: () => dispatch(cleanErrorsAction()),
     getTemplates: (teamId) => dispatch(getTemplatesAction(teamId)),
+    updateProject: (projectId, data) => dispatch(updateProjectAction(projectId, data)),
+    removeProject: (projectId) => dispatch(removeProjectAction(projectId)),
   };
 };
 

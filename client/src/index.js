@@ -1,7 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom";
-// disable eslint for the line below to fix the CI
-import "./semantic/dist/semantic.min.css"; // eslint-disable-line
 
 import "./index.css";
 

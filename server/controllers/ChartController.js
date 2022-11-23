@@ -83,7 +83,7 @@ class ChartController {
   findByProject(projectId) {
     return db.Chart.findAll({
       where: { project_id: projectId },
-      order: [["dashboardOrder", "ASC"]],
+      order: [["dashboardOrder", "ASC"], [db.Dataset, "order", "ASC"]],
       include: [{ model: db.Dataset }, { model: db.Chartshare }],
     })
       .then((charts) => {
@@ -98,6 +98,7 @@ class ChartController {
     const query = {
       where: { id },
       include: [{ model: db.Dataset }, { model: db.Chartshare }],
+      order: [[db.Dataset, "order", "ASC"]],
     };
 
     return db.Chart.findOne(customQuery || query)
@@ -110,7 +111,7 @@ class ChartController {
   }
 
   update(id, data, user, justUpdates) {
-    if (data.autoUpdate) {
+    if (data.autoUpdate || data.autoUpdate === 0) {
       return db.Chart.update(data, {
         where: { id },
         attributes: { exclude: ["chartData"] },
@@ -355,7 +356,7 @@ class ChartController {
             }
             return tempItem;
           });
-        } else if (!skipCache) {
+        } else if (!skipCache && user?.id) {
           // create a new cache for the data that was fetched
           this.chartCache.create(user.id, gChart.id, resolvingData);
         }
@@ -584,7 +585,7 @@ class ChartController {
       })
       .then((data) => {
         const previewData = data;
-        if (noSource !== "true") {
+        if (noSource !== "true" && user) {
           // cache, but do it async
           this.chartCache.create(user.id, chart.id, data);
         } else if (noSource) {
@@ -640,6 +641,7 @@ class ChartController {
     return db.Chart.findAll({
       where: { id: chartIds },
       include: [{ model: db.Dataset }],
+      order: [[db.Dataset, "order", "ASC"]],
     })
       .then((charts) => {
         const dataPromises = [];

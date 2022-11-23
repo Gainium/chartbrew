@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Link } from "react-router-dom";
+import { Link as LinkDom } from "react-router-dom";
 import {
-  Button, Container, Dimmer, Divider, Form, Grid, Header, Icon, Input,
-  Label, Loader, Menu, Message, Modal, Popup, Segment, TransitionablePortal,
-} from "semantic-ui-react";
+  Button, Container, Grid, Input, Loading, Row, Spacer, Text,
+  Navbar, Tooltip, Popover, Divider, Modal, Badge, Link, useTheme,
+} from "@nextui-org/react";
+import {
+  ChevronLeftCircle, CloseSquare, Edit, EditSquare, Image2, People, Show, TickSquare
+} from "react-iconly";
 import { connect } from "react-redux";
 import { TwitterPicker } from "react-color";
 import { createMedia } from "@artsy/fresnel";
@@ -19,6 +22,8 @@ import "react-toastify/dist/ReactToastify.min.css";
 import AceEditor from "react-ace";
 import "ace-builds/src-min-noconflict/mode-css";
 import "ace-builds/src-min-noconflict/theme-tomorrow";
+import "ace-builds/src-min-noconflict/theme-one_dark";
+import { HiRefresh } from "react-icons/hi";
 
 import {
   getPublicDashboard as getPublicDashboardAction,
@@ -27,6 +32,7 @@ import {
   updateProjectLogo as updateProjectLogoAction,
 } from "../../actions/project";
 import { updateTeam as updateTeamAction } from "../../actions/team";
+import { runQueryOnPublic as runQueryOnPublicAction } from "../../actions/chart";
 import { blue, primary, secondary } from "../../config/colors";
 import Chart from "../Chart/Chart";
 import logo from "../../assets/logo_inverted.png";
@@ -50,7 +56,7 @@ const defaultColors = [
 function PublicDashboard(props) {
   const {
     getPublicDashboard, match, getProject, updateProject, updateProjectLogo, charts,
-    updateTeam, user, teams,
+    updateTeam, user, teams, runQueryOnPublic,
   } = props;
 
   const [project, setProject] = useState({});
@@ -66,12 +72,14 @@ function PublicDashboard(props) {
   const [logoPreview, setLogoPreview] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState("");
-  const [helpActive, setHelpActive] = useState(false);
   const [noCharts, setNoCharts] = useState(false);
   const [preview, setPreview] = useState(false);
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [notAuthorized, setNotAuthorized] = useState(false);
   const [reportPassword, setReportPassword] = useState("");
+  const [refreshLoading, setRefreshLoading] = useState(false);
+
+  const { isDark } = useTheme();
 
   const onDrop = useCallback((acceptedFiles) => {
     setNewChanges({ ...newChanges, logo: acceptedFiles });
@@ -248,6 +256,24 @@ function PublicDashboard(props) {
       .catch(() => {});
   };
 
+  const _onRefreshCharts = () => {
+    setRefreshLoading(true);
+    const refreshPromises = [];
+    for (let i = 0; i < charts.length; i++) {
+      refreshPromises.push(
+        runQueryOnPublic(project.id, charts[i].id)
+      );
+    }
+
+    return Promise.all(refreshPromises)
+      .then(() => {
+        setRefreshLoading(false);
+      })
+      .catch(() => {
+        setRefreshLoading(false);
+      });
+  };
+
   const _canAccess = (role) => {
     const team = teams.filter((t) => t.id === project.team_id)[0];
     if (!team) return false;
@@ -256,11 +282,16 @@ function PublicDashboard(props) {
 
   if (loading && !project.id && !noCharts) {
     return (
-      <Dimmer active={loading}>
-        <Loader active={loading}>
-          Preparing the dashboard...
-        </Loader>
-      </Dimmer>
+      <Container style={styles.container}>
+        <Spacer y={4} />
+        <Row align="center" justify="center">
+          <Loading type="points" color="currentColor" size="xl" />
+        </Row>
+        <Spacer y={1} />
+        <Row align="center" justify="center">
+          <Text size="1.4em" css={{ color: "$accents7" }}>Loading the dashboard...</Text>
+        </Row>
+      </Container>
     );
   }
 
@@ -273,48 +304,48 @@ function PublicDashboard(props) {
           )}
           <style type="text/css">
             {`
-            body {
-              background-color: ${blue};
-            }
+            // body {
+            //   background-color: ${blue};
+            // }
           `}
           </style>
         </Helmet>
 
-        <Grid
-          centered
-          verticalAlign="middle"
-          textAlign="center"
-        >
-          <Grid.Column stretched style={{ maxWidth: 500 }}>
-            <Container textAlign="center" style={{ marginTop: 100 }}>
-              {passwordRequired && (
-                <Segment textAlign="left">
-                  <Header as="h4">
-                    Please enter the password to access this report
-                  </Header>
-                  <Form size="large">
-                    <Form.Field>
-                      <Input
-                        placeholder="Enter the password here"
-                        value={reportPassword}
-                        type="password"
-                        onChange={(e, data) => setReportPassword(data.value)}
-                      />
-                    </Form.Field>
-                    <Form.Field>
-                      <Button
-                        primary
-                        content="Access"
-                        loading={loading}
-                        onClick={() => _fetchProject(reportPassword)}
-                      />
-                    </Form.Field>
-                  </Form>
-                </Segment>
-              )}
-            </Container>
-          </Grid.Column>
-        </Grid>
+        {passwordRequired && (
+          <Container css={{ mt: 100, maxWidth: 500 }} justify="center">
+            <Row justify="center">
+              <Text h3>
+                Please enter the password to access this report
+              </Text>
+            </Row>
+            <Spacer y={1} />
+
+            <Row>
+              <Input
+                placeholder="Enter the password here"
+                value={reportPassword}
+                type="password"
+                onChange={(e) => setReportPassword(e.target.value)}
+                size="lg"
+                fullWidth
+                bordered
+              />
+            </Row>
+            <Spacer y={0.5} />
+            <Row>
+              <Button
+                primary
+                loading={loading}
+                onClick={() => _fetchProject(reportPassword)}
+                size="lg"
+                shadow
+                auto
+              >
+                Access
+              </Button>
+            </Row>
+          </Container>
+        )}
 
         <ToastContainer
           position="bottom-center"
@@ -327,6 +358,7 @@ function PublicDashboard(props) {
           draggable
           pauseOnHover
           transition={Flip}
+          theme={isDark ? "dark" : "light"}
         />
       </div>
     );
@@ -335,20 +367,28 @@ function PublicDashboard(props) {
   if (noCharts && user.id) {
     return (
       <div>
-        <Container text textAlign="center">
-          <Divider section hidden />
-          <Header>
-            {"This report does not contain any charts"}
-            <Header.Subheader>
+        <Container justify="center" css={{ mt: 100 }}>
+          <Row justify="center">
+            <Text h3>
+              {"This report does not contain any charts"}
+            </Text>
+          </Row>
+          <Spacer y={0.3} />
+          <Row justify="center">
+            <Text b>
               {"Head back to your dashboard and add charts to the report from the individual chart settings menu."}
-            </Header.Subheader>
-          </Header>
-          <Divider section hidden />
-          <Button
-            primary
-            content="Go back"
-            onClick={() => window.history.back()}
-          />
+            </Text>
+          </Row>
+          <Spacer y={1} />
+          <Row justify="center">
+            <Button
+              onClick={() => window.history.back()}
+              auto
+              size="lg"
+            >
+              Go back
+            </Button>
+          </Row>
         </Container>
       </div>
     );
@@ -357,10 +397,11 @@ function PublicDashboard(props) {
   if (noCharts && !user.id) {
     return (
       <div>
-        <Container text textAlign="center">
-          <Divider section hidden />
-          <Header>{"This dashbord does not contain any public charts"}</Header>
-          <Divider section hidden />
+        <Container css={{ mt: 100 }}>
+          <Row justify="center">
+            <Text h3>{"This dashbord does not contain any public charts"}</Text>
+          </Row>
+          <Spacer y={2} />
         </Container>
       </div>
     );
@@ -381,158 +422,176 @@ function PublicDashboard(props) {
         </style>
       </Helmet>
       {editorVisible && !preview && (
-        <Menu color="blue" inverted size="large">
-          <Menu.Item icon as={Link} to={`/${project.team_id}/${project.id}/dashboard`}>
-            <Popup
-              trigger={(
-                <Icon name="arrow left" />
-              )}
-              content="Back to your dashboard"
-            />
-          </Menu.Item>
-          {!isSaved && (
-            <Menu.Item>
-              <Media at="mobile">
+        <Navbar shouldHideOnScroll isBordered variant="sticky" isCompact maxWidth={"xl"}>
+          <Navbar.Content>
+            <Tooltip content="Back to your dashboard" placement="rightStart">
+              <Navbar.Link>
+                <LinkDom to={`/${project.team_id}/${project.id}/dashboard`}>
+                  <Button
+                    icon={<ChevronLeftCircle />}
+                    bordered
+                    css={{ minWidth: "fit-content" }}
+                  />
+                </LinkDom>
+              </Navbar.Link>
+            </Tooltip>
+            {!isSaved && (
+              <Navbar.Item>
                 <Button
-                  secondary
-                  content="Save"
-                  size="small"
-                  icon="checkmark"
-                  loading={saveLoading}
+                  color="secondary"
+                  size="sm"
+                  icon={<TickSquare />}
+                  disabled={saveLoading}
                   onClick={_onSaveChanges}
-                />
-              </Media>
-              <Media greaterThan="mobile">
-                <Button
-                  secondary
-                  content="Save changes"
-                  size="small"
-                  icon="checkmark"
-                  loading={saveLoading}
-                  onClick={_onSaveChanges}
-                />
-              </Media>
-            </Menu.Item>
-          )}
-          <Menu.Menu position="right">
+                  auto
+                >
+                  Save
+                </Button>
+              </Navbar.Item>
+            )}
+          </Navbar.Content>
+          <Navbar.Content>
             {_canAccess("editor") && (
-              <Popup
-                trigger={(
-                  <Menu.Item icon onClick={() => setPreview(true)}>
-                    <Icon name="eye" />
-                  </Menu.Item>
-                )}
-                content="Preview as a visitor"
-                position={width < breakpoints.tablet ? "bottom center" : "bottom right"}
-              />
+              <Tooltip content="Preview as a visitor" placement="bottom">
+                <Navbar.Link onClick={() => setPreview(true)}>
+                  <Show />
+                  <Text hideIn={"xs"} css={{ pl: 3 }}>Preview</Text>
+                </Navbar.Link>
+              </Tooltip>
             )}
             {_canAccess("editor") && (
-              <Popup
-                trigger={(
-                  <Menu.Item icon>
-                    <Icon name="image" />
-                  </Menu.Item>
-                )}
-                on="click"
-                position={width < breakpoints.tablet ? "bottom center" : "bottom right"}
-              >
-                <>
-                  <Header size="small">Change background</Header>
-                  <TwitterPicker
-                    color={newChanges.backgroundColor}
-                    onChangeComplete={(color) => {
-                      const rgba = `rgba(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b}, ${color.rgb.a})`;
-                      setNewChanges({ ...newChanges, backgroundColor: rgba });
-                    }}
-                    colors={defaultColors}
-                  />
-                  <Divider />
-                  <Header size="small">Change text color</Header>
-                  <TwitterPicker
-                    color={newChanges.titleColor}
-                    onChangeComplete={(color) => {
-                      const rgba = `rgba(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b}, ${color.rgb.a})`;
-                      setNewChanges({ ...newChanges, titleColor: rgba });
-                    }}
-                    colors={defaultColors}
-                  />
-                </>
-              </Popup>
+              <Popover>
+                <Popover.Trigger>
+                  <Navbar.Link>
+                    <Image2 />
+                    <Text hideIn="xs" css={{ pl: 3 }}>Appearance</Text>
+                  </Navbar.Link>
+                </Popover.Trigger>
+                <Popover.Content>
+                  <Container css={{ pt: 20, pb: 20 }}>
+                    <Row>
+                      <Text b>Change background</Text>
+                    </Row>
+                    <Spacer y={0.3} />
+                    <Row>
+                      <div>
+                        <TwitterPicker
+                          color={newChanges.backgroundColor}
+                          onChangeComplete={(color) => {
+                            const rgba = `rgba(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b}, ${color.rgb.a})`;
+                            setNewChanges({ ...newChanges, backgroundColor: rgba });
+                          }}
+                          colors={defaultColors}
+                        />
+                      </div>
+                    </Row>
+
+                    <Spacer y={0.5} />
+                    <Divider />
+                    <Spacer y={0.5} />
+
+                    <Row>
+                      <Text b>Change text color</Text>
+                    </Row>
+                    <Spacer y={0.3} />
+                    <Row>
+                      <TwitterPicker
+                        color={newChanges.titleColor}
+                        onChangeComplete={(color) => {
+                          const rgba = `rgba(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b}, ${color.rgb.a})`;
+                          setNewChanges({ ...newChanges, titleColor: rgba });
+                        }}
+                        colors={defaultColors}
+                      />
+                    </Row>
+                  </Container>
+                </Popover.Content>
+              </Popover>
             )}
             {_canAccess("editor") && (
-              <Popup
-                trigger={(
-                  <Menu.Item icon onClick={() => setEditingTitle(true)}>
-                    <Icon name="pencil" />
-                  </Menu.Item>
-                )}
-                content="Edit the dashboard information and style"
-              />
+              <Tooltip content="Edit the dashboard information and style" placement="bottom">
+                <Navbar.Link onClick={() => setEditingTitle(true)}>
+                  <Edit />
+                  <Text hideIn={"xs"} css={{ pl: 3 }}>Report settings</Text>
+                </Navbar.Link>
+              </Tooltip>
             )}
             {_canAccess("admin") && (
-              <Popup
-                trigger={(
-                  <Menu.Item icon onClick={() => setShowSettings(true)}>
-                    <Icon name="share square" />
-                  </Menu.Item>
-                )}
-                content="Sharing settings"
-              />
+              <Tooltip content="Sharing settings" placement="bottom">
+                <Navbar.Link onClick={() => setShowSettings(true)}>
+                  <People />
+                  <Text hideIn={"xs"} css={{ pl: 3 }}>Sharing</Text>
+                </Navbar.Link>
+              </Tooltip>
             )}
-          </Menu.Menu>
-        </Menu>
+          </Navbar.Content>
+        </Navbar>
       )}
 
       {preview && (
-        <Popup
-          trigger={(
-            <Button
-              primary
-              onClick={() => setPreview(false)}
-              icon
-              style={styles.previewBtn}
-            >
-              <Icon name="x" />
-            </Button>
-          )}
-          content="Exit preview"
-          position="bottom right"
+        <Button
+          onClick={() => setPreview(false)}
+          icon={<CloseSquare />}
+          style={styles.previewBtn}
+          css={{ minWidth: "fit-content" }}
         />
       )}
 
-      {charts && charts.length > 0 && _isOnReport()
-        && (
-          <div className="main-container" style={styles.mainContainer(width < breakpoints.tablet)}>
-            <Dimmer active={loading}>
-              <Loader active={loading}>
-                Preparing the dashboard...
-              </Loader>
-            </Dimmer>
-            <Media greaterThan="mobile">
-              <Divider hidden />
-            </Media>
-            <Container text className="title-container">
-              {editorVisible && !preview && (
-                <>
+      <Media greaterThan="mobile">
+        {project?.Team?.allowReportRefresh && (
+          <Button
+            onClick={() => _onRefreshCharts()}
+            iconRight={refreshLoading ? <Loading type="spinner" /> : <HiRefresh />}
+            disabled={refreshLoading}
+            style={styles.refreshBtn(editorVisible)}
+            css={{ minWidth: "fit-content" }}
+            auto
+            size="sm"
+          >
+            Refresh charts
+          </Button>
+        )}
+      </Media>
+
+      {charts && charts.length > 0 && _isOnReport() && (
+        <div className="main-container" style={styles.mainContainer(width < breakpoints.tablet)}>
+          {loading && (
+            <Container style={styles.container}>
+              <Spacer y={4} />
+              <Row align="center" justify="center">
+                <Loading type="points" color="currentColor" size="xl" />
+              </Row>
+              <Spacer y={1} />
+              <Row align="center" justify="center">
+                <Text size="1.4em" css={{ color: "$accents7" }}>Loading the dashboard...</Text>
+              </Row>
+            </Container>
+          )}
+          <Media greaterThan="mobile">
+            <Spacer y={2} />
+          </Media>
+          <Container className="title-container" css={{ pl: 0, pr: 0 }} fluid>
+            {editorVisible && !preview && (
+              <>
+                <Spacer y={0.5} />
+                <Row justify="flex-start">
                   <Media greaterThan="mobile">
-                    <div className="dashboard-logo-container" {...getRootProps()}>
-                      <input {...getInputProps()} />
-                      <Popup
-                        trigger={(
-                          <img
-                            className="dashboard-logo"
-                            src={logoPreview || newChanges.logo || logo}
-                            height="70"
-                            alt={`${project.name} Logo`}
-                            style={styles.logoContainer}
-                          />
-                        )}
-                        content="Click here to add your own logo"
-                        position="bottom left"
+                    <div className="dashboard-logo-container">
+                      <img
+                        className="dashboard-logo"
+                        src={logoPreview || newChanges.logo || logo}
+                        height="70"
+                        alt={`${project.name} Logo`}
+                        style={styles.logoContainer}
                       />
+                      <Badge color="primary" css={{ cursor: "pointer", mt: -10, ml: -10 }} {...getRootProps()}>
+                        <EditSquare size="small" />
+                        <input {...getInputProps()} />
+                      </Badge>
                     </div>
                   </Media>
-
+                </Row>
+                <Row justify="center">
                   <Media at="mobile">
                     <div style={{ textAlign: "center" }}>
                       <img
@@ -544,26 +603,38 @@ function PublicDashboard(props) {
                       />
                     </div>
                   </Media>
-                </>
-              )}
+                </Row>
+              </>
+            )}
 
-              {(!editorVisible || preview) && (
-                <div className="dashboard-logo-container">
+            {(!editorVisible || preview) && (
+              <Row justify="center">
+                <Media at="mobile">
+                  <Spacer y={2} />
+                </Media>
+              </Row>
+            )}
+
+            {(!editorVisible || preview) && (
+              <>
+                <Row className="dashboard-logo-container" justify="flex-start">
                   <Media greaterThan="mobile">
                     <a
                       href={newChanges.logoLink || project.logoLink || "#"}
                       target="_blank"
                       rel="noreferrer"
+                      style={{ ...styles.logoContainer, zIndex: 10 }}
                     >
                       <img
                         className="dashboard-logo"
                         src={project.logo ? `${API_HOST}/${project.logo}` : logo}
                         height="70"
                         alt={`${project.name} Logo`}
-                        style={styles.logoContainer}
                       />
                     </a>
                   </Media>
+                </Row>
+                <Row justify="center" className="dashboard-logo-container">
                   <Media at="mobile">
                     <div style={{ textAlign: "center" }}>
                       <a
@@ -581,171 +652,206 @@ function PublicDashboard(props) {
                       </a>
                     </div>
                   </Media>
-                </div>
-              )}
+                </Row>
+              </>
+            )}
 
-              <Header
-                textAlign="center"
-                size="huge"
+            <Row justify="center" align="center">
+              <Text
+                b
+                size="2.4em"
                 style={styles.dashboardTitle(newChanges.titleColor || project.titleColor)}
                 className="dashboard-title"
               >
                 {newChanges.dashboardTitle || project.dashboardTitle || project.name}
-                {!editorVisible && project.description && (
-                  <Header.Subheader
-                    style={styles.dashboardTitle(project.titleColor)}
-                    className="dashboard-sub-title"
-                  >
-                    {project.description}
-                  </Header.Subheader>
-                )}
-                {editorVisible && newChanges.description && (
-                <Header.Subheader
+              </Text>
+            </Row>
+            <Spacer y={0.2} />
+            {!editorVisible && project.description && (
+              <Row justify="center" align="center">
+                <Text
+                  size="1.5em"
+                  style={styles.dashboardTitle(project.titleColor)}
+                  className="dashboard-sub-title"
+                >
+                  {project.description}
+                </Text>
+              </Row>
+            )}
+            {editorVisible && newChanges.description && (
+              <Row justify="center" align="center">
+                <Text
+                  size="1.2em"
                   style={styles.dashboardTitle(newChanges.titleColor)}
                   className="dashboard-sub-title"
                 >
                   {newChanges.description}
-                </Header.Subheader>
-                )}
-              </Header>
-            </Container>
-            <Divider section hidden />
+                </Text>
+              </Row>
+            )}
+            {project.Team?.allowReportRefresh && (
+              <>
+                <Spacer y={0.5} />
+                <Row justify="center">
+                  <Media at="mobile">
+                    <Button
+                      onClick={() => _onRefreshCharts()}
+                      iconRight={refreshLoading ? <Loading type="spinner" /> : <HiRefresh />}
+                      disabled={refreshLoading}
+                      css={{ minWidth: "fit-content" }}
+                      auto
+                      size="sm"
+                    >
+                      Refresh charts
+                    </Button>
+                  </Media>
+                </Row>
+              </>
+            )}
+          </Container>
+          <Spacer y={2} />
 
-            <Grid stackable centered style={styles.mainGrid} className="main-chart-grid">
-              {charts.map((chart) => {
-                if (chart.draft) return (<span style={{ display: "none" }} key={chart.id} />);
-                if (!chart.onReport) return (<span style={{ display: "none" }} key={chart.id} />);
+          <Grid.Container gap={1.5} className="main-chart-grid">
+            {charts.map((chart) => {
+              if (chart.draft) return (<span style={{ display: "none" }} key={chart.id} />);
+              if (!chart.onReport) return (<span style={{ display: "none" }} key={chart.id} />);
 
-                return (
-                  <Grid.Column
-                    width={chart.chartSize * 4}
-                    key={chart.id}
-                    style={styles.chartGrid}
-                    className="chart-container"
-                  >
-                    <Chart
-                      isPublic
-                      chart={chart}
-                      charts={charts}
-                      className="chart-card"
-                    />
-                  </Grid.Column>
-                );
-              })}
-              {project.Team && project.Team.showBranding && (
-                <Grid.Column className="footer-content" textAlign="center" style={{ color: newChanges.titleColor }} width={16}>
-                  {"Powered by "}
-                  <a
-                    href={`https://chartbrew.com?ref=${project.brewName}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: newChanges.titleColor, textDecoration: "underline" }}
-                  >
-                    Chartbrew
-                  </a>
-                </Grid.Column>
-              )}
-            </Grid>
-          </div>
-        )}
+              return (
+                <Grid
+                  xs={12}
+                  sm={chart.chartSize * 4 > 12 ? 12 : chart.chartSize * 4}
+                  md={chart.chartSize * 3 > 12 ? 12 : chart.chartSize * 3}
+                  key={chart.id}
+                  className="chart-container"
+                  css={{ minHeight: 400, overflowY: "hidden" }}
+                >
+                  <Chart
+                    isPublic
+                    chart={chart}
+                    charts={charts}
+                    className="chart-card"
+                    showExport={project.Team?.allowReportExport}
+                    password={project.password || window.localStorage.getItem("reportPassword")}
+                  />
+                </Grid>
+              );
+            })}
+            {project.Team && project.Team.showBranding && (
+              <Grid xs={12} className="footer-content" justify="center" css={{ mt: 20 }}>
+                <Link
+                  css={{ color: newChanges.titleColor, ai: "flex-start" }}
+                  href={"https://chartbrew.com?ref=chartbrew_os_report"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Text css={{ color: newChanges.titleColor }}>
+                    Powered by
+                  </Text>
+                  <Spacer x={0.2} />
+                  <Text css={{ color: newChanges.titleColor }}>
+                    <strong>Chart</strong>
+                  </Text>
+                  <Text css={{ color: newChanges.titleColor }}>
+                    brew
+                  </Text>
+                </Link>
+              </Grid>
+            )}
+          </Grid.Container>
+        </div>
+      )}
 
-      <TransitionablePortal open={editingTitle}>
-        <Modal open={editingTitle} onClose={() => setEditingTitle(false)}>
-          <Modal.Header>Edit the title and description</Modal.Header>
-          <Modal.Content>
-            <Form>
-              <Form.Field>
-                <label>Dashboard title</label>
-                <Input
-                  placeholder="Enter your dashboard title"
-                  value={newChanges.dashboardTitle}
-                  onChange={(e, data) => {
-                    setNewChanges({ ...newChanges, dashboardTitle: data.value });
-                  }}
-                />
-              </Form.Field>
-              <Form.Field>
-                <label>Dashboard description</label>
-                <Input
-                  placeholder="Enter a short description"
-                  value={newChanges.description}
-                  onChange={(e, data) => {
-                    setNewChanges({ ...newChanges, description: data.value });
-                  }}
-                />
-              </Form.Field>
-              <Form.Field>
-                <label>Company website URL</label>
-                <Input
-                  placeholder="https://example.com"
-                  value={newChanges.logoLink}
-                  onChange={(e, data) => {
-                    setNewChanges({ ...newChanges, logoLink: data.value });
-                  }}
-                />
-              </Form.Field>
-              <Form.Field>
-                <Divider section />
-                <Header size="small">Custom CSS</Header>
-                <label>Some of the main classes on the page:</label>
-                <Label.Group>
-                  <Label>.main-container</Label>
-                  <Label>.title-container</Label>
-                  <Label>.dashboard-title</Label>
-                  <Label>.dashboard-sub-title</Label>
-                  <Label>.chart-grid</Label>
-                  <Label>.chart-container</Label>
-                  <Label>.chart-card</Label>
-                </Label.Group>
+      <Modal open={editingTitle} onClose={() => setEditingTitle(false)} width={600}>
+        <Modal.Header><Text h4>Edit the title and description</Text></Modal.Header>
+        <Modal.Body>
+          <Container>
+            <Row>
+              <Input
+                label="Dashboard title"
+                placeholder="Enter your dashboard title"
+                value={newChanges.dashboardTitle}
+                onChange={(e) => {
+                  setNewChanges({ ...newChanges, dashboardTitle: e.target.value });
+                }}
+                bordered
+                fullWidth
+              />
+            </Row>
+            <Spacer y={0.5} />
+            <Row>
+              <Input
+                label="Dashboard description"
+                placeholder="Enter a short description"
+                value={newChanges.description}
+                onChange={(e) => {
+                  setNewChanges({ ...newChanges, description: e.target.value });
+                }}
+                bordered
+                fullWidth
+              />
+            </Row>
+            <Spacer y={0.5} />
+            <Row>
+              <Input
+                label="Company website URL"
+                placeholder="https://example.com"
+                value={newChanges.logoLink}
+                onChange={(e) => {
+                  setNewChanges({ ...newChanges, logoLink: e.target.value });
+                }}
+                bordered
+                fullWidth
+              />
+            </Row>
+            <Spacer y={0.5} />
+            <Divider />
+            <Spacer y={0.5} />
+            <Row>
+              <Text b>Custom CSS</Text>
+            </Row>
+            <Spacer y={0.5} />
+            <Row>
+              <Text size={14}>Some of the main classes on the page:</Text>
+            </Row>
+            <Spacer y={0.2} />
+            <Row wrap="wrap">
+              <Badge>.main-container</Badge>
+              <Badge>.title-container</Badge>
+              <Badge>.dashboard-title</Badge>
+              <Badge>.dashboard-sub-title</Badge>
+              <Badge>.chart-grid</Badge>
+              <Badge>.chart-container</Badge>
+              <Badge>.chart-card</Badge>
+            </Row>
+            <Spacer y={0.5} />
+            <Row>
+              <div style={{ width: "100%" }}>
                 <AceEditor
                   mode="css"
-                  theme="tomorrow"
+                  theme={isDark ? "one_dark" : "tomorrow"}
                   height="200px"
                   width="none"
                   value={newChanges.headerCode}
+                  style={{ borderRadius: 10 }}
                   onChange={(value) => {
                     setNewChanges({ ...newChanges, headerCode: value });
                   }}
                   name="queryEditor"
                   editorProps={{ $blockScrolling: true }}
                 />
-
-                {!helpActive && (
-                  <Button
-                    className="tertiary"
-                    content="See an example"
-                    onClick={() => setHelpActive(true)}
-                  />
-                )}
-
-                {helpActive && (
-                  <Message onDismiss={() => setHelpActive(false)}>
-                    <p>
-                      {"You might have to use "}
-                      <Label>{"!important"}</Label>
-                      {" for your styles to override existing ones"}
-                    </p>
-                    <p>
-                      <pre>
-                        {`.dashboard-title {
-  font-size: 4em !important;
-}`}
-                      </pre>
-                    </p>
-                  </Message>
-                )}
-              </Form.Field>
-            </Form>
-          </Modal.Content>
-          <Modal.Actions>
-            <Button
-              primary
-              content="Preview changes"
-              onClick={() => setEditingTitle(false)}
-            />
-          </Modal.Actions>
-        </Modal>
-      </TransitionablePortal>
+              </div>
+            </Row>
+          </Container>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            primary
+            onClick={() => setEditingTitle(false)}
+          >
+            Preview changes
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
       <SharingSettings
         open={showSettings}
@@ -771,6 +877,7 @@ function PublicDashboard(props) {
         draggable
         pauseOnHover
         transition={Flip}
+        theme={isDark ? "dark" : "light"}
       />
     </div>
   );
@@ -780,7 +887,7 @@ const styles = {
   container: {
     flex: 1,
     flexGrow: 1,
-    backgroundColor: blue,
+    // backgroundColor: blue,
     height: window.innerHeight,
     paddingBottom: 100,
   },
@@ -789,11 +896,12 @@ const styles = {
   },
   dashboardTitle: (color) => ({
     color: color || "black",
+    textAlign: "center",
   }),
   logoContainer: {
     position: "absolute",
-    top: 30,
-    left: 20,
+    top: 0,
+    left: 0,
     cursor: "pointer",
   },
   logoContainerMobile: {
@@ -806,6 +914,12 @@ const styles = {
     right: 20,
     zIndex: 10,
   },
+  refreshBtn: (isMenuVisible) => ({
+    position: "absolute",
+    top: isMenuVisible ? 90 : 20,
+    right: 20,
+    zIndex: 10,
+  }),
   mainContainer: (mobile) => ({
     padding: mobile ? 0 : 20,
     paddingTop: 20,
@@ -824,6 +938,7 @@ PublicDashboard.propTypes = {
   charts: PropTypes.array.isRequired,
   user: PropTypes.object.isRequired,
   teams: PropTypes.array.isRequired,
+  runQueryOnPublic: PropTypes.func.isRequired,
 };
 
 const mapStateToProps = (state) => ({
@@ -840,6 +955,7 @@ const mapDispatchToProps = (dispatch) => ({
   updateProject: (projectId, data) => dispatch(updateProjectAction(projectId, data)),
   updateProjectLogo: (projectId, logo) => dispatch(updateProjectLogoAction(projectId, logo)),
   updateTeam: (teamId, data) => dispatch(updateTeamAction(teamId, data)),
+  runQueryOnPublic: (projectId, chartId) => dispatch(runQueryOnPublicAction(projectId, chartId)),
 });
 
 export default connect(mapStateToProps, mapDispatchToProps)(PublicDashboard);

@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://chartbrew.com">
-    <img src="https://docs.chartbrew.com/assets/logo_full_3.png" alt="ChartBrew logo" width="250"/>
+    <img src="./docs/.vuepress/public/assets/logo_full_3.png" alt="ChartBrew logo" width="250"/>
   </a>
 </a>
 
@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="https://chartbrew.com">
-    <img src="https://cdn2.chartbrew.com/chartbrew-dashboard.jpg" alt="ChartBrew dashboard" width="600"/>
+    <img src="https://cdn2.chartbrew.com/v2-banner.png" alt="ChartBrew dashboard" width="600"/>
   </a>
 </p>
 
@@ -145,6 +145,16 @@ docker run -p 4019:4019 -p 4018:4018 \
   -e REACT_APP_CLIENT_HOST=http://localhost:4018 \
   -e REACT_APP_API_HOST=http://localhost:4019 \
   razvanilin/chartbrew:latest-arm64
+```
+
+### Changing environmental variables
+
+If you want to run your Docker image with new environmental variables, it's important to build the client application again withing the image. This is done by running the following command:
+
+```sh
+# replace 'your_container_name' with the name of your docker container where Chartbrew is running
+
+docker exec -it -w /code/client your_container_name npm run build
 ```
 
 ## Deploy Chartbrew on Heroku and Vercel

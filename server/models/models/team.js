@@ -14,6 +14,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: true,
     },
+    allowReportRefresh: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    allowReportExport: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    }
   }, {
     freezeTableName: true,
   });
